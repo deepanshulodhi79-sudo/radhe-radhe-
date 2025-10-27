@@ -270,11 +270,14 @@ app.post('/send', requireAuth, async (req, res) => {
       failures: failed.slice(0, 10).map(f => (f.error && f.error.message) ? f.error.message : JSON.stringify(f)).join('; ')
     });
 
-  } catch (err) {
-    console.error('Send error:', err);
-    return res.json({ success: false, message: err.message });
-  }
-});
+  catch (err) {
+  console.error("Send error:", err);
+  return res.json({
+    success: false,
+    message: err.message || JSON.stringify(err)
+  });
+}
+
 
 // Start server
 app.listen(PORT, () => {
