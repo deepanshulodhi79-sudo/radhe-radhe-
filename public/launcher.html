@@ -1,37 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Fast Mail Launcher</title>
-<link rel="stylesheet" href="style.css">
+  <title>Mailer Launcher</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    form { max-width: 500px; margin: auto; }
+    input, textarea { width: 100%; margin: 10px 0; padding: 10px; }
+    button { background: blue; color: white; padding: 10px; border: none; border-radius: 5px; }
+  </style>
 </head>
 <body>
-<div class="form-grid">
-  <h2>❤✨Radhe 💌 Radhe✨❤</h2>
-
-  <div class="grid-row">
-    <input id="senderName" placeholder="Sender Name">
-    <input id="email" placeholder="Your Gmail">
-  </div>
-
-  <div class="grid-row">
-    <input id="pass" type="password" placeholder="App Password">
-    <input id="subject" placeholder="Subject">
-  </div>
-
-  <div class="grid-row">
-    <textarea id="message" placeholder="Message Body"></textarea>
-    <textarea id="recipients" placeholder="Recipients (comma or newline)"></textarea>
-  </div>
-
-  <div class="grid-row">
-    <button id="sendBtn">Send All</button>
-    <button onclick="logout()">Logout</button>
-  </div>
-
-  <p id="statusMessage"></p>
-</div>
-
-<script src="script.js"></script>
+  <h2>Send Mail</h2>
+  <form action="/send" method="POST">
+    <input type="text" name="fromName" placeholder="Sender Name" required>
+    <input type="email" name="fromEmail" placeholder="Sender Gmail" required>
+    <input type="password" name="fromPassword" placeholder="App Password" required>
+    <input type="email" name="toEmail" placeholder="Recipient Email" required>
+    <input type="text" name="subject" placeholder="Subject">
+    <textarea name="message" placeholder="Your message..." rows="5"></textarea>
+    <button type="submit">Send Mail</button>
+  </form>
+  <form action="/logout" method="POST" style="margin-top:20px;">
+    <button type="submit">Logout</button>
+  </form>
 </body>
 </html>
