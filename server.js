@@ -9,7 +9,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// 🔑 Hardcoded login (Updated)
+// Hardcoded Login
 const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
@@ -24,7 +24,7 @@ app.use(session({
   saveUninitialized: true
 }));
 
-// 🔒 Auth middleware
+// Auth middleware
 function requireAuth(req, res, next) {
   if (req.session.user) return next();
   return res.redirect('/');
@@ -55,31 +55,35 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// Helper function for delay
+// Delay helper
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Helper function for batch sending
+// Batch sender
 async function sendBatch(transporter, mails, batchSize = 5) {
   const results = [];
   for (let i = 0; i < mails.length; i += batchSize) {
     const batch = mails.slice(i, i + batchSize);
-    const promises = batch.map(mail => transporter.sendMail(mail));
-    const settled = await Promise.allSettled(promises);
+
+    const settled = await Promise.allSettled(
+      batch.map(mail => transporter.sendMail(mail))
+    );
+
     results.push(...settled);
 
-    await delay(200); // Gmail rate-limit pause
+    await delay(300); // safe cooldown
   }
   return results;
 }
 
-// ✅ Bulk Mail Sender with auto-footer
+// Main SEND endpoint (Inbox-friendly)
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
+
     if (!email || !password || !recipients) {
-      return res.json({ success: false, message: "Email, password and recipients required" });
+      return res.json({ success: false, message: "Email, password & recipients required" });
     }
 
     const recipientList = recipients
@@ -91,28 +95,29 @@ app.post('/send', requireAuth, async (req, res) => {
       return res.json({ success: false, message: "No valid recipients" });
     }
 
-    // 📩 AUTO FOOTER
-    const footer = "\n\n📩 Scanned & Secured — www.avast.com";
-
+    // 🔥 Sendinblue SMTP (Inbox safe)
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user: email, pass: password }
+      host: "smtp-relay.sendinblue.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: email,     // SAME email used in Sendinblue verified sender
+        pass: password   // SMTP key from Sendinblue
+      }
     });
 
-    // Prepare mails (footer added here)
+    // mail builder (NO FOOTER = NO SPAM)
     const mails = recipientList.map(r => ({
-      from: `"${senderName || 'Anonymous'}" <${email}>`,
+      from: `"${senderName || 'Sender'}" <${email}>`,
       to: r,
       subject: subject || "No Subject",
-      text: (message || "") + footer
+      text: message || ""
     }));
 
-    // Send mails in batches
+    // Send
     await sendBatch(transporter, mails, 5);
 
-    return res.json({ success: true, message: `✅ Mail sent to ${recipientList.length}` });
+    return res.json({ success: true, message: `✅ Mail sent to ${recipientList.length} recipients` });
 
   } catch (err) {
     console.error("Send error:", err);
@@ -120,7 +125,7 @@ app.post('/send', requireAuth, async (req, res) => {
   }
 });
 
-// Start server
+// Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
