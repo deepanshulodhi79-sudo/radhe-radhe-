@@ -16,12 +16,12 @@ const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 // ================= GLOBAL STATE =================
 
 // Per-sender hourly mail limit
-let mailLimits = {};  
+let mailLimits = {};
 
 // Global launcher lock
 let launcherLocked = false;
 
-// Session store reference
+// Session store
 const sessionStore = new session.MemoryStore();
 
 // ================= MIDDLEWARE =================
@@ -29,46 +29,39 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session (1 hour max life)
+// Session (1 hour life)
 app.use(session({
   secret: 'bulk-mailer-secret',
   resave: false,
   saveUninitialized: true,
   store: sessionStore,
   cookie: {
-    maxAge: 60 * 60 * 1000
+    maxAge: 60 * 60 * 1000 // 1 hour
   }
 }));
 
-// ================= RESET LOGIC =================
+// ================= FULL RESET =================
 
 function fullServerReset() {
-  console.log("🔁 FULL LAUNCHER RESET INITIATED");
+  console.log("🔁 FULL LAUNCHER RESET");
 
-  // 🔒 Lock launcher
   launcherLocked = true;
-
-  // ❌ Clear mail limits
   mailLimits = {};
 
-  // ❌ Destroy all sessions
   sessionStore.clear(() => {
-    console.log("🧹 Sessions cleared");
+    console.log("🧹 All sessions cleared");
   });
 
-  // 🔓 Unlock after short delay (fresh login allowed)
   setTimeout(() => {
     launcherLocked = false;
-    console.log("✅ Launcher ready for fresh login");
+    console.log("✅ Launcher unlocked for fresh login");
   }, 2000);
 }
 
-// ================= AUTH MIDDLEWARE =================
+// ================= AUTH =================
 
 function requireAuth(req, res, next) {
-  if (launcherLocked) {
-    return res.redirect('/');
-  }
+  if (launcherLocked) return res.redirect('/');
   if (req.session.user) return next();
   return res.redirect('/');
 }
@@ -93,9 +86,8 @@ app.post('/login', (req, res) => {
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
     req.session.user = username;
-    req.session.logoutConfirm = false;
 
-    // ⏱️ AUTO FULL RESET after 1 hour
+    // ⏱️ Full reset after 1 hour
     setTimeout(fullServerReset, 60 * 60 * 1000);
 
     return res.json({ success: true });
@@ -109,24 +101,15 @@ app.get('/launcher', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// 🔐 2-click logout
+// ================= LOGOUT =================
+// 🔓 DOUBLE-CLICK LOGOUT (backend simple)
 app.post('/logout', (req, res) => {
-  if (!req.session.logoutConfirm) {
-    req.session.logoutConfirm = true;
-
-    setTimeout(() => {
-      if (req.session) req.session.logoutConfirm = false;
-    }, 10000);
-
-    return res.json({
-      success: false,
-      message: "⚠️ Logout confirm karne ke liye dobara click karo"
-    });
-  }
-
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
-    return res.json({ success: true, message: "✅ Logged out" });
+    return res.json({
+      success: true,
+      message: "✅ Logged out successfully"
+    });
   });
 });
 
@@ -152,12 +135,15 @@ app.post('/send', requireAuth, async (req, res) => {
     const { senderName, email, password, recipients, subject, message } = req.body;
 
     if (!email || !password || !recipients) {
-      return res.json({ success: false, message: "Email, password and recipients required" });
+      return res.json({
+        success: false,
+        message: "Email, password and recipients required"
+      });
     }
 
     const now = Date.now();
 
-    // ⏱️ Hourly reset
+    // ⏱️ Hourly sender reset
     if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
       mailLimits[email] = { count: 0, startTime: now };
     }
