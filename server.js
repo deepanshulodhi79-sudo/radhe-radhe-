@@ -9,89 +9,171 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// 🔑 Hardcoded login (Updated)
+// 🔑 Hardcoded login
 const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
-// Middleware
+// ================= GLOBAL STATE =================
+
+// Per-sender hourly mail limit
+let mailLimits = {};  
+
+// Global launcher lock
+let launcherLocked = false;
+
+// Session store reference
+const sessionStore = new session.MemoryStore();
+
+// ================= MIDDLEWARE =================
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Session (1 hour max life)
 app.use(session({
   secret: 'bulk-mailer-secret',
   resave: false,
-  saveUninitialized: true
+  saveUninitialized: true,
+  store: sessionStore,
+  cookie: {
+    maxAge: 60 * 60 * 1000
+  }
 }));
 
-// 🔒 Auth middleware
+// ================= RESET LOGIC =================
+
+function fullServerReset() {
+  console.log("🔁 FULL LAUNCHER RESET INITIATED");
+
+  // 🔒 Lock launcher
+  launcherLocked = true;
+
+  // ❌ Clear mail limits
+  mailLimits = {};
+
+  // ❌ Destroy all sessions
+  sessionStore.clear(() => {
+    console.log("🧹 Sessions cleared");
+  });
+
+  // 🔓 Unlock after short delay (fresh login allowed)
+  setTimeout(() => {
+    launcherLocked = false;
+    console.log("✅ Launcher ready for fresh login");
+  }, 2000);
+}
+
+// ================= AUTH MIDDLEWARE =================
+
 function requireAuth(req, res, next) {
+  if (launcherLocked) {
+    return res.redirect('/');
+  }
   if (req.session.user) return next();
   return res.redirect('/');
 }
 
-// Routes
+// ================= ROUTES =================
+
+// Login page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
+// Login
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
+
+  if (launcherLocked) {
+    return res.json({
+      success: false,
+      message: "⛔ Launcher reset ho raha hai, thodi der baad login karo"
+    });
+  }
+
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
     req.session.user = username;
+    req.session.logoutConfirm = false;
+
+    // ⏱️ AUTO FULL RESET after 1 hour
+    setTimeout(fullServerReset, 60 * 60 * 1000);
+
     return res.json({ success: true });
   }
+
   return res.json({ success: false, message: "❌ Invalid credentials" });
 });
 
+// Launcher page
 app.get('/launcher', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
+// 🔐 2-click logout
 app.post('/logout', (req, res) => {
+  if (!req.session.logoutConfirm) {
+    req.session.logoutConfirm = true;
+
+    setTimeout(() => {
+      if (req.session) req.session.logoutConfirm = false;
+    }, 10000);
+
+    return res.json({
+      success: false,
+      message: "⚠️ Logout confirm karne ke liye dobara click karo"
+    });
+  }
+
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
-    return res.json({ success: true });
+    return res.json({ success: true, message: "✅ Logged out" });
   });
 });
 
-// Helper function for delay
+// ================= HELPERS =================
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Helper function for batch sending
 async function sendBatch(transporter, mails, batchSize = 5) {
-  const results = [];
   for (let i = 0; i < mails.length; i += batchSize) {
-    const batch = mails.slice(i, i + batchSize);
-    const promises = batch.map(mail => transporter.sendMail(mail));
-    const settled = await Promise.allSettled(promises);
-    results.push(...settled);
-
-    await delay(200); // Gmail rate-limit pause
+    await Promise.allSettled(
+      mails.slice(i, i + batchSize).map(m => transporter.sendMail(m))
+    );
+    await delay(300);
   }
-  return results;
 }
 
-// ✅ Bulk Mail Sender with auto-footer
+// ================= SEND MAIL =================
+
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
+
     if (!email || !password || !recipients) {
       return res.json({ success: false, message: "Email, password and recipients required" });
+    }
+
+    const now = Date.now();
+
+    // ⏱️ Hourly reset
+    if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
+      mailLimits[email] = { count: 0, startTime: now };
     }
 
     const recipientList = recipients
       .split(/[\n,]+/)
       .map(r => r.trim())
-      .filter(r => r);
+      .filter(Boolean);
 
-    if (recipientList.length === 0) {
-      return res.json({ success: false, message: "No valid recipients" });
+    if (mailLimits[email].count + recipientList.length > 27) {
+      return res.json({
+        success: false,
+        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[email].count}`
+      });
     }
 
-    // 📩 AUTO FOOTER
     const footer = "\n\n📩 Scanned & Secured — www.avast.com";
 
     const transporter = nodemailer.createTransport({
@@ -101,7 +183,6 @@ app.post('/send', requireAuth, async (req, res) => {
       auth: { user: email, pass: password }
     });
 
-    // Prepare mails (footer added here)
     const mails = recipientList.map(r => ({
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
@@ -109,18 +190,21 @@ app.post('/send', requireAuth, async (req, res) => {
       text: (message || "") + footer
     }));
 
-    // Send mails in batches
     await sendBatch(transporter, mails, 5);
 
-    return res.json({ success: true, message: `✅ Mail sent to ${recipientList.length}` });
+    mailLimits[email].count += recipientList.length;
+
+    return res.json({
+      success: true,
+      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
+    });
 
   } catch (err) {
-    console.error("Send error:", err);
     return res.json({ success: false, message: err.message });
   }
 });
 
-// Start server
+// ================= START =================
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Mail Launcher running on port ${PORT}`);
 });
