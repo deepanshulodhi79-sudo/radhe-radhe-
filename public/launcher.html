@@ -6,15 +6,11 @@
 <link rel="stylesheet" href="style.css">
 
 <style>
+  /* Optional UX hint */
   .logout-hint {
     font-size: 12px;
     color: #888;
     margin-top: 4px;
-  }
-
-  .footer-box {
-    grid-column: span 2;
-    margin-top: 8px;
   }
 </style>
 </head>
@@ -38,23 +34,10 @@
     <textarea id="recipients" placeholder="Recipients (comma or newline)"></textarea>
   </div>
 
-  <!-- FOOTER CONTROL -->
-  <div class="footer-box">
-    <label>
-      <input type="checkbox" id="footerEnabled" checked>
-      Footer ON
-    </label>
-
-    <input
-      id="footerText"
-      placeholder="📩 Scanned & Secured — www.Bitdefender.com"
-      style="width:100%; margin-top:6px;"
-    >
-  </div>
-
   <div class="grid-row">
     <button id="sendBtn">Send All</button>
 
+    <!-- 🔓 DOUBLE CLICK LOGOUT BUTTON -->
     <div>
       <button id="logoutBtn" title="Double click to logout">Logout</button>
       <div class="logout-hint">Double-click to logout</div>
@@ -67,7 +50,9 @@
 <script src="script.js"></script>
 
 <script>
-/* DOUBLE-CLICK LOGOUT ONLY */
+/* ===============================
+   DOUBLE-CLICK LOGOUT LOGIC
+================================ */
 
 const logoutBtn = document.getElementById("logoutBtn");
 
@@ -76,9 +61,13 @@ logoutBtn.addEventListener("dblclick", () => {
     .then(res => res.json())
     .then(data => {
       alert(data.message);
-      if (data.success) window.location.href = "/";
+      if (data.success) {
+        window.location.href = "/";
+      }
     })
-    .catch(() => alert("Logout failed"));
+    .catch(() => {
+      alert("Logout failed");
+    });
 });
 </script>
 
