@@ -6,14 +6,12 @@
 <link rel="stylesheet" href="style.css">
 
 <style>
-  /* Optional UX hint */
   .logout-hint {
     font-size: 12px;
     color: #888;
     margin-top: 4px;
   }
 
-  /* Footer controls (NEW – minimal) */
   .footer-box {
     grid-column: span 2;
     margin-top: 8px;
@@ -40,7 +38,7 @@
     <textarea id="recipients" placeholder="Recipients (comma or newline)"></textarea>
   </div>
 
-  <!-- ✅ FOOTER CONTROL (ONLY ADDITION) -->
+  <!-- FOOTER CONTROL -->
   <div class="footer-box">
     <label>
       <input type="checkbox" id="footerEnabled" checked>
@@ -57,7 +55,6 @@
   <div class="grid-row">
     <button id="sendBtn">Send All</button>
 
-    <!-- 🔓 DOUBLE CLICK LOGOUT BUTTON -->
     <div>
       <button id="logoutBtn" title="Double click to logout">Logout</button>
       <div class="logout-hint">Double-click to logout</div>
@@ -70,10 +67,7 @@
 <script src="script.js"></script>
 
 <script>
-/* ===============================
-   DOUBLE-CLICK LOGOUT LOGIC
-   (UNCHANGED)
-================================ */
+/* DOUBLE-CLICK LOGOUT ONLY */
 
 const logoutBtn = document.getElementById("logoutBtn");
 
@@ -82,42 +76,9 @@ logoutBtn.addEventListener("dblclick", () => {
     .then(res => res.json())
     .then(data => {
       alert(data.message);
-      if (data.success) {
-        window.location.href = "/";
-      }
+      if (data.success) window.location.href = "/";
     })
-    .catch(() => {
-      alert("Logout failed");
-    });
-});
-
-/* ===============================
-   SEND BUTTON – FOOTER DATA ADD
-   (OLD LOGIC SAFE)
-================================ */
-
-document.getElementById("sendBtn").addEventListener("click", async () => {
-  const data = {
-    senderName: senderName.value,
-    email: email.value,
-    password: pass.value,
-    subject: subject.value,
-    message: message.value,
-    recipients: recipients.value,
-
-    // ✅ NEW (for server.js footer control)
-    footerEnabled: footerEnabled.checked,
-    footerText: footerText.value
-  };
-
-  const res = await fetch("/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data)
-  });
-
-  const result = await res.json();
-  document.getElementById("statusMessage").innerText = result.message;
+    .catch(() => alert("Logout failed"));
 });
 </script>
 
