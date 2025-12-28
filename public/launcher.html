@@ -6,16 +6,17 @@
 <link rel="stylesheet" href="style.css">
 
 <style>
+  /* Optional UX hint */
   .logout-hint {
     font-size: 12px;
     color: #888;
     margin-top: 4px;
   }
 
-  /* Footer controls – minimal style */
+  /* Footer controls (NEW – minimal) */
   .footer-box {
     grid-column: span 2;
-    margin-top: 6px;
+    margin-top: 8px;
   }
 </style>
 </head>
@@ -39,11 +40,11 @@
     <textarea id="recipients" placeholder="Recipients (comma or newline)"></textarea>
   </div>
 
-  <!-- ✅ FOOTER CONTROL (NEW – SAFE ADDITION) -->
+  <!-- ✅ FOOTER CONTROL (ONLY ADDITION) -->
   <div class="footer-box">
     <label>
       <input type="checkbox" id="footerEnabled" checked>
-      Enable footer
+      Footer ON
     </label>
 
     <input
@@ -71,6 +72,7 @@
 <script>
 /* ===============================
    DOUBLE-CLICK LOGOUT LOGIC
+   (UNCHANGED)
 ================================ */
 
 const logoutBtn = document.getElementById("logoutBtn");
@@ -91,6 +93,7 @@ logoutBtn.addEventListener("dblclick", () => {
 
 /* ===============================
    SEND BUTTON – FOOTER DATA ADD
+   (OLD LOGIC SAFE)
 ================================ */
 
 document.getElementById("sendBtn").addEventListener("click", async () => {
@@ -102,7 +105,7 @@ document.getElementById("sendBtn").addEventListener("click", async () => {
     message: message.value,
     recipients: recipients.value,
 
-    // ✅ NEW (BACKEND SUPPORT ALREADY GIVEN)
+    // ✅ NEW (for server.js footer control)
     footerEnabled: footerEnabled.checked,
     footerText: footerText.value
   };
