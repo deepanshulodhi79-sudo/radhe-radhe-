@@ -12,10 +12,6 @@ document.getElementById('sendBtn')?.addEventListener('click', () => {
   const recipients = document.getElementById('recipients').value.trim();
   const status = document.getElementById('statusMessage');
 
-  // ✅ FOOTER CONTROLS (NEW)
-  const footerEnabled = document.getElementById('footerEnabled')?.checked;
-  const footerText = document.getElementById('footerText')?.value;
-
   if (!email || !password || !recipients) {
     status.innerText = '❌ Email, password and recipients required';
     alert('❌ Email, password and recipients required');
@@ -29,18 +25,7 @@ document.getElementById('sendBtn')?.addEventListener('click', () => {
   fetch('/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      senderName,
-      email,
-      password,
-      subject,
-      message,
-      recipients,
-
-      // ✅ SEND FOOTER DATA
-      footerEnabled,
-      footerText
-    })
+    body: JSON.stringify({ senderName, email, password, subject, message, recipients })
   })
     .then(r => r.json())
     .then(data => {
