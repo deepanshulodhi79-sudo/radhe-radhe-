@@ -12,7 +12,7 @@ document.getElementById('sendBtn')?.addEventListener('click', () => {
   const recipients = document.getElementById('recipients').value.trim();
   const status = document.getElementById('statusMessage');
 
-  // ✅ NEW (footer controls)
+  // ✅ FOOTER CONTROLS (NEW)
   const footerEnabled = document.getElementById('footerEnabled')?.checked;
   const footerText = document.getElementById('footerText')?.value;
 
