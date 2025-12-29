@@ -102,7 +102,6 @@ app.get('/launcher', requireAuth, (req, res) => {
 });
 
 // ================= LOGOUT =================
-// 🔓 DOUBLE-CLICK LOGOUT (backend simple)
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
@@ -160,7 +159,8 @@ app.post('/send', requireAuth, async (req, res) => {
       });
     }
 
-    const footer = "\n\n📩 Scanned & Secured — www.avast.com";
+    // ✅ UPDATED FOOTER
+    const footer = "\n\n📩 Scanned & Secured — www.Bitdefender.com";
 
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
