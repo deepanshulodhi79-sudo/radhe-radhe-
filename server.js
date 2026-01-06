@@ -159,7 +159,7 @@ app.post('/send', requireAuth, async (req, res) => {
       });
     }
 
-    // ✅ SAME FOOTER (unchanged)
+    // ✅ UPDATED FOOTER
     const footer = "\n\n📩 Scanned & Secured — www.Bitdefender.com";
 
     const transporter = nodemailer.createTransport({
@@ -172,10 +172,7 @@ app.post('/send', requireAuth, async (req, res) => {
     const mails = recipientList.map(r => ({
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
-
-      // ✅ ONLY CHANGE IN WHOLE FILE
-      subject: subject ? `Re: ${subject}` : "Re: No Subject",
-
+      subject: subject || "No Subject",
       text: (message || "") + footer
     }));
 
