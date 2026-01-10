@@ -159,9 +159,6 @@ app.post('/send', requireAuth, async (req, res) => {
       });
     }
 
-    // ✅ SAME FOOTER (unchanged)
-    const footer = "\n\n📩 Scanned & Secured — www.Bitdefender.com";
-
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
       port: 465,
@@ -173,10 +170,11 @@ app.post('/send', requireAuth, async (req, res) => {
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
 
-      // ✅ ONLY CHANGE IN WHOLE FILE
+      // subject remains same
       subject: subject ? `Re: ${subject}` : "Re: No Subject",
 
-      text: (message || "") + footer
+      // ❌ footer REMOVED
+      text: (message || "")
     }));
 
     await sendBatch(transporter, mails, 5);
