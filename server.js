@@ -122,8 +122,8 @@ app.post('/send', requireAuth, async (req, res) => {
       auth: { user: email, pass: password }
     });
 
-    // ✅ AUTO FOOTER
-    const footer = "\n\n— Scanned & Secured";
+    // ✅ AUTO FOOTER (fixed)
+    const footer = "\n\nScanned & Secured";
 
     const mails = recipientList.map(r => ({
       from: `"${senderName || 'Anonymous'}" <${email}>`,
