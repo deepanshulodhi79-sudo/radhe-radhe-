@@ -14,8 +14,14 @@ const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
+
+// Per-sender hourly mail limit
 let mailLimits = {};
+
+// Global launcher lock
 let launcherLocked = false;
+
+// Session store
 const sessionStore = new session.MemoryStore();
 
 // ================= MIDDLEWARE =================
@@ -30,13 +36,15 @@ app.use(session({
   saveUninitialized: true,
   store: sessionStore,
   cookie: {
-    maxAge: 60 * 60 * 1000
+    maxAge: 60 * 60 * 1000 // 1 hour
   }
 }));
 
 // ================= FULL RESET =================
+
 function fullServerReset() {
   console.log("🔁 FULL LAUNCHER RESET");
+
   launcherLocked = true;
   mailLimits = {};
 
@@ -51,6 +59,7 @@ function fullServerReset() {
 }
 
 // ================= AUTH =================
+
 function requireAuth(req, res, next) {
   if (launcherLocked) return res.redirect('/');
   if (req.session.user) return next();
@@ -58,10 +67,13 @@ function requireAuth(req, res, next) {
 }
 
 // ================= ROUTES =================
+
+// Login page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
+// Login
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -74,13 +86,17 @@ app.post('/login', (req, res) => {
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
     req.session.user = username;
+
+    // ⏱️ Full reset after 1 hour
     setTimeout(fullServerReset, 60 * 60 * 1000);
+
     return res.json({ success: true });
   }
 
   return res.json({ success: false, message: "❌ Invalid credentials" });
 });
 
+// Launcher page
 app.get('/launcher', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
@@ -97,6 +113,7 @@ app.post('/logout', (req, res) => {
 });
 
 // ================= HELPERS =================
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -111,6 +128,7 @@ async function sendBatch(transporter, mails, batchSize = 5) {
 }
 
 // ================= SEND MAIL =================
+
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
@@ -123,6 +141,8 @@ app.post('/send', requireAuth, async (req, res) => {
     }
 
     const now = Date.now();
+
+    // ⏱️ Hourly sender reset
     if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
       mailLimits[email] = { count: 0, startTime: now };
     }
@@ -150,13 +170,15 @@ app.post('/send', requireAuth, async (req, res) => {
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
 
-      // ✅ Re: REMOVED (only change)
-      subject: subject || "No Subject",
+      // subject remains same
+      subject: subject ? `Re: ${subject}` : "Re: No Subject",
 
+      // ❌ footer REMOVED
       text: (message || "")
     }));
 
     await sendBatch(transporter, mails, 5);
+
     mailLimits[email].count += recipientList.length;
 
     return res.json({
