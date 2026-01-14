@@ -14,14 +14,8 @@ const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
-
-// Per-sender hourly mail limit
 let mailLimits = {};
-
-// Global launcher lock
 let launcherLocked = false;
-
-// Session store
 const sessionStore = new session.MemoryStore();
 
 // ================= MIDDLEWARE =================
@@ -29,37 +23,23 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session (1 hour life)
 app.use(session({
   secret: 'bulk-mailer-secret',
   resave: false,
   saveUninitialized: true,
   store: sessionStore,
-  cookie: {
-    maxAge: 60 * 60 * 1000 // 1 hour
-  }
+  cookie: { maxAge: 60 * 60 * 1000 }
 }));
 
-// ================= FULL RESET =================
-
+// ================= RESET =================
 function fullServerReset() {
-  console.log("🔁 FULL LAUNCHER RESET");
-
   launcherLocked = true;
   mailLimits = {};
-
-  sessionStore.clear(() => {
-    console.log("🧹 All sessions cleared");
-  });
-
-  setTimeout(() => {
-    launcherLocked = false;
-    console.log("✅ Launcher unlocked for fresh login");
-  }, 2000);
+  sessionStore.clear(() => {});
+  setTimeout(() => launcherLocked = false, 2000);
 }
 
 // ================= AUTH =================
-
 function requireAuth(req, res, next) {
   if (launcherLocked) return res.redirect('/');
   if (req.session.user) return next();
@@ -67,45 +47,37 @@ function requireAuth(req, res, next) {
 }
 
 // ================= ROUTES =================
-
-// Login page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Login
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
   if (launcherLocked) {
     return res.json({
       success: false,
-      message: "⛔ Launcher reset ho raha hai, thodi der baad login karo"
+      message: "⛔ Launcher resetting, please wait"
     });
   }
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
     req.session.user = username;
-
-    // ⏱️ Full reset after 1 hour
     setTimeout(fullServerReset, 60 * 60 * 1000);
-
     return res.json({ success: true });
   }
 
-  return res.json({ success: false, message: "❌ Invalid credentials" });
+  res.json({ success: false, message: "❌ Invalid credentials" });
 });
 
-// Launcher page
 app.get('/launcher', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// ================= LOGOUT =================
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
-    return res.json({
+    res.json({
       success: true,
       message: "✅ Logged out successfully"
     });
@@ -113,10 +85,7 @@ app.post('/logout', (req, res) => {
 });
 
 // ================= HELPERS =================
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+const delay = ms => new Promise(r => setTimeout(r, ms));
 
 async function sendBatch(transporter, mails, batchSize = 5) {
   for (let i = 0; i < mails.length; i += batchSize) {
@@ -127,8 +96,13 @@ async function sendBatch(transporter, mails, batchSize = 5) {
   }
 }
 
-// ================= SEND MAIL =================
+function safeSubject(sub) {
+  if (!sub) return "Quick question";
+  if (/^re:/i.test(sub)) return sub;
+  return sub;
+}
 
+// ================= SEND MAIL =================
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
@@ -140,9 +114,17 @@ app.post('/send', requireAuth, async (req, res) => {
       });
     }
 
-    const now = Date.now();
+    // ⏳ Human-like delay per session (NO SPEED LOSS)
+    if (!req.session.lastSend) req.session.lastSend = 0;
+    if (Date.now() - req.session.lastSend < 3000) {
+      return res.json({
+        success: false,
+        message: "⏳ Wait 3 seconds before next send"
+      });
+    }
+    req.session.lastSend = Date.now();
 
-    // ⏱️ Hourly sender reset
+    const now = Date.now();
     if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
       mailLimits[email] = { count: 0, startTime: now };
     }
@@ -163,31 +145,41 @@ app.post('/send', requireAuth, async (req, res) => {
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
-      auth: { user: email, pass: password }
+      auth: {
+        user: email,
+        pass: password
+      }
     });
 
+    const safeName =
+      senderName && senderName.length > 2
+        ? senderName
+        : email.split('@')[0];
+
     const mails = recipientList.map(r => ({
-      from: `"${senderName || 'Anonymous'}" <${email}>`,
+      from: `"${safeName}" <${email}>`,
       to: r,
-
-      // subject remains same
-      subject: subject ? `Re: ${subject}` : "Re: No Subject",
-
-      // ❌ footer REMOVED
-      text: (message || "")
+      subject: safeSubject(subject),
+      text: message || "Hello",
+      headers: {
+        'X-Mailer': 'Gmail',
+        'X-Priority': '3'
+      }
     }));
 
     await sendBatch(transporter, mails, 5);
-
     mailLimits[email].count += recipientList.length;
 
-    return res.json({
+    res.json({
       success: true,
       message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
     });
 
   } catch (err) {
-    return res.json({ success: false, message: err.message });
+    res.json({
+      success: false,
+      message: err.message
+    });
   }
 });
 
