@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 8080;
 const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
-// ================= GLOBAL STATE =================
+// ================= GLOBAL =================
 let mailLimits = {};
 let launcherLocked = false;
 const sessionStore = new session.MemoryStore();
@@ -55,10 +55,7 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
   if (launcherLocked) {
-    return res.json({
-      success: false,
-      message: "⛔ Launcher resetting, please wait"
-    });
+    return res.json({ success: false, message: "⛔ Resetting, wait..." });
   }
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
@@ -77,50 +74,39 @@ app.get('/launcher', requireAuth, (req, res) => {
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
-    res.json({
-      success: true,
-      message: "✅ Logged out successfully"
-    });
+    res.json({ success: true, message: "✅ Logged out" });
   });
 });
 
 // ================= HELPERS =================
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
-async function sendBatch(transporter, mails, batchSize = 5) {
-  for (let i = 0; i < mails.length; i += batchSize) {
-    await Promise.allSettled(
-      mails.slice(i, i + batchSize).map(m => transporter.sendMail(m))
-    );
-    await delay(300);
+async function sendBatch(transporter, mails) {
+  for (const mail of mails) {
+    await transporter.sendMail(mail);
+    await delay(1200); // 👈 VERY IMPORTANT (human gap)
   }
 }
 
-function safeSubject(sub) {
-  if (!sub) return "Quick question";
-  if (/^re:/i.test(sub)) return sub;
-  return sub;
+function safeSubject(subject) {
+  if (!subject) return "Quick question";
+  if (/^re:/i.test(subject)) return subject;
+  return subject;
 }
 
-// ================= SEND MAIL =================
+// ================= SEND =================
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
 
     if (!email || !password || !recipients) {
-      return res.json({
-        success: false,
-        message: "Email, password and recipients required"
-      });
+      return res.json({ success: false, message: "Required fields missing" });
     }
 
-    // ⏳ Human-like delay per session (NO SPEED LOSS)
+    // ⏳ Per session guard
     if (!req.session.lastSend) req.session.lastSend = 0;
-    if (Date.now() - req.session.lastSend < 3000) {
-      return res.json({
-        success: false,
-        message: "⏳ Wait 3 seconds before next send"
-      });
+    if (Date.now() - req.session.lastSend < 5000) {
+      return res.json({ success: false, message: "⏳ Please wait a few seconds" });
     }
     req.session.lastSend = Date.now();
 
@@ -134,21 +120,17 @@ app.post('/send', requireAuth, async (req, res) => {
       .map(r => r.trim())
       .filter(Boolean);
 
-    if (mailLimits[email].count + recipientList.length > 27) {
+    // 🔒 SAFE LIMIT (very important)
+    if (mailLimits[email].count + recipientList.length > 20) {
       return res.json({
         success: false,
-        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[email].count}`
+        message: `❌ Limit 20 mails/hour | Remaining ${20 - mailLimits[email].count}`
       });
     }
 
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: email,
-        pass: password
-      }
+      service: "gmail",
+      auth: { user: email, pass: password }
     });
 
     const safeName =
@@ -156,34 +138,32 @@ app.post('/send', requireAuth, async (req, res) => {
         ? senderName
         : email.split('@')[0];
 
-    const mails = recipientList.map(r => ({
+    const mails = recipientList.map(to => ({
       from: `"${safeName}" <${email}>`,
-      to: r,
+      to,
       subject: safeSubject(subject),
       text: message || "Hello",
       headers: {
-        'X-Mailer': 'Gmail',
-        'X-Priority': '3'
+        "X-Mailer": "Gmail",
+        "X-Priority": "3",
+        "List-Unsubscribe": "<mailto:noreply@gmail.com>" // subtle trust signal
       }
     }));
 
-    await sendBatch(transporter, mails, 5);
+    await sendBatch(transporter, mails);
     mailLimits[email].count += recipientList.length;
 
     res.json({
       success: true,
-      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
+      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/20`
     });
 
   } catch (err) {
-    res.json({
-      success: false,
-      message: err.message
-    });
+    res.json({ success: false, message: err.message });
   }
 });
 
 // ================= START =================
 app.listen(PORT, () => {
-  console.log(`🚀 Mail Launcher running on port ${PORT}`);
+  console.log(`🚀 Mail Launcher running on ${PORT}`);
 });
