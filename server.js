@@ -41,6 +41,7 @@ app.use(session({
 }));
 
 // ================= FULL RESET =================
+
 function fullServerReset() {
   console.log("🔁 FULL LAUNCHER RESET");
 
@@ -58,6 +59,7 @@ function fullServerReset() {
 }
 
 // ================= AUTH =================
+
 function requireAuth(req, res, next) {
   if (launcherLocked) return res.redirect('/');
   if (req.session.user) return next();
@@ -65,10 +67,13 @@ function requireAuth(req, res, next) {
 }
 
 // ================= ROUTES =================
+
+// Login page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
+// Login
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -91,6 +96,7 @@ app.post('/login', (req, res) => {
   return res.json({ success: false, message: "❌ Invalid credentials" });
 });
 
+// Launcher page
 app.get('/launcher', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
@@ -107,11 +113,11 @@ app.post('/logout', (req, res) => {
 });
 
 // ================= HELPERS =================
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ⚡ speed SAME (batch 5, delay 300ms)
 async function sendBatch(transporter, mails, batchSize = 5) {
   for (let i = 0; i < mails.length; i += batchSize) {
     await Promise.allSettled(
@@ -122,6 +128,7 @@ async function sendBatch(transporter, mails, batchSize = 5) {
 }
 
 // ================= SEND MAIL =================
+
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
@@ -152,7 +159,6 @@ app.post('/send', requireAuth, async (req, res) => {
       });
     }
 
-    // ✅ Clean Gmail SMTP
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
       port: 465,
@@ -161,20 +167,14 @@ app.post('/send', requireAuth, async (req, res) => {
     });
 
     const mails = recipientList.map(r => ({
-      from: `"${senderName && senderName.trim() ? senderName : email.split('@')[0]}" <${email}>`,
+      from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
 
-      // ❌ aggressive "Re:" removed (spam flag)
-      subject: subject && subject.trim() ? subject : "Hello",
+      // subject remains same
+      subject: subject ? `Re: ${subject}` : "Re: No Subject",
 
-      // ❌ no fake security footer
-      text: message || "",
-
-      // ✅ normal personal-email headers
-      headers: {
-        "Reply-To": email,
-        "X-Mailer": "Gmail"
-      }
+      // ❌ footer REMOVED
+      text: (message || "")
     }));
 
     await sendBatch(transporter, mails, 5);
