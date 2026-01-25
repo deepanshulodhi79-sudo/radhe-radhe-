@@ -14,7 +14,7 @@ const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
-let mailLimits = {};
+let mailLimits = {};          // per sender hourly limit
 let launcherLocked = false;
 
 // Session store
@@ -25,31 +25,28 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session (1 hour life)
+// Session (1 hour)
 app.use(session({
   secret: 'bulk-mailer-secret',
   resave: false,
   saveUninitialized: true,
   store: sessionStore,
-  cookie: {
-    maxAge: 60 * 60 * 1000
-  }
+  cookie: { maxAge: 60 * 60 * 1000 }
 }));
 
-// ================= FULL RESET =================
+// ================= RESET =================
 function fullServerReset() {
   console.log("🔁 FULL LAUNCHER RESET");
-
   launcherLocked = true;
   mailLimits = {};
 
   sessionStore.clear(() => {
-    console.log("🧹 All sessions cleared");
+    console.log("🧹 Sessions cleared");
   });
 
   setTimeout(() => {
     launcherLocked = false;
-    console.log("✅ Launcher unlocked for fresh login");
+    console.log("✅ Launcher unlocked");
   }, 2000);
 }
 
@@ -69,10 +66,7 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
   if (launcherLocked) {
-    return res.json({
-      success: false,
-      message: "⛔ Launcher reset ho raha hai, thodi der baad login karo"
-    });
+    return res.json({ success: false, message: "⛔ Reset in progress" });
   }
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
@@ -88,14 +82,10 @@ app.get('/launcher', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// ================= LOGOUT =================
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
-    return res.json({
-      success: true,
-      message: "✅ Logged out successfully"
-    });
+    res.json({ success: true });
   });
 });
 
@@ -104,13 +94,14 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function sendBatch(transporter, mails, batchSize = 5) {
-  for (let i = 0; i < mails.length; i += batchSize) {
-    await Promise.allSettled(
-      mails.slice(i, i + batchSize).map(m => transporter.sendMail(m))
-    );
-    await delay(300);
-  }
+// Python-style slow sender (NO parallel sending)
+async function sendSlow(transporter, mail) {
+  await transporter.sendMail(mail);
+
+  // 45–120 sec random delay
+  const wait = Math.floor(Math.random() * (120000 - 45000 + 1) + 45000);
+  console.log(`⏳ Waiting ${Math.floor(wait / 1000)} sec`);
+  await delay(wait);
 }
 
 // ================= SEND MAIL =================
@@ -119,13 +110,11 @@ app.post('/send', requireAuth, async (req, res) => {
     const { senderName, email, password, recipients, subject, message } = req.body;
 
     if (!email || !password || !recipients) {
-      return res.json({
-        success: false,
-        message: "Email, password and recipients required"
-      });
+      return res.json({ success: false, message: "Missing fields" });
     }
 
     const now = Date.now();
+    const MAX_PER_HOUR = 15; // SAFE LIMIT
 
     if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
       mailLimits[email] = { count: 0, startTime: now };
@@ -136,40 +125,45 @@ app.post('/send', requireAuth, async (req, res) => {
       .map(r => r.trim())
       .filter(Boolean);
 
-    if (mailLimits[email].count + recipientList.length > 27) {
+    if (mailLimits[email].count + recipientList.length > MAX_PER_HOUR) {
       return res.json({
         success: false,
-        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[email].count}`
+        message: `❌ Max ${MAX_PER_HOUR}/hour allowed`
       });
     }
 
+    // ⚠️ SMTP CONFIG
+    // 👉 Gmail (testing only)
+    // 👉 Zoho recommended for production
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user: email, pass: password }
+      host: "smtp.gmail.com",   // 🔁 change to smtp.zoho.in
+      port: 465,                // Zoho: 587
+      secure: true,             // Zoho: false
+      auth: {
+        user: email,
+        pass: password          // Gmail App Password / Zoho App Password
+      }
     });
 
-    const mails = recipientList.map(r => ({
-      from: `"${senderName || 'Anonymous'}" <${email}>`,
-      to: r,
+    for (const r of recipientList) {
+      const mail = {
+        from: `"${senderName || 'Anonymous'}" <${email}>`,
+        to: r,
+        subject: subject || "",   // ✅ ONLY USER-PROVIDED SUBJECT
+        text: message || ""
+      };
 
-      // ✅ Re: REMOVED (original simple subject)
-      subject: subject || "No Subject",
-
-      text: (message || "")
-    }));
-
-    await sendBatch(transporter, mails, 5);
-
-    mailLimits[email].count += recipientList.length;
+      await sendSlow(transporter, mail);
+      mailLimits[email].count++;
+    }
 
     return res.json({
       success: true,
-      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
+      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/${MAX_PER_HOUR}`
     });
 
   } catch (err) {
+    console.error(err);
     return res.json({ success: false, message: err.message });
   }
 });
