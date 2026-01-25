@@ -9,13 +9,16 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// 🔑 Hardcoded login
+// ================= LOGIN =================
 const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
-let mailLimits = {};          // per sender hourly limit
 let launcherLocked = false;
+let mailLimits = {}; // per sender hourly
+let sendQueue = [];
+let isProcessing = false;
+let senderIndex = 0;
 
 // Session store
 const sessionStore = new session.MemoryStore();
@@ -25,7 +28,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session (1 hour)
 app.use(session({
   secret: 'bulk-mailer-secret',
   resave: false,
@@ -36,18 +38,12 @@ app.use(session({
 
 // ================= RESET =================
 function fullServerReset() {
-  console.log("🔁 FULL LAUNCHER RESET");
   launcherLocked = true;
   mailLimits = {};
+  sendQueue = [];
 
-  sessionStore.clear(() => {
-    console.log("🧹 Sessions cleared");
-  });
-
-  setTimeout(() => {
-    launcherLocked = false;
-    console.log("✅ Launcher unlocked");
-  }, 2000);
+  sessionStore.clear(() => {});
+  setTimeout(() => { launcherLocked = false; }, 2000);
 }
 
 // ================= AUTH =================
@@ -66,7 +62,7 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
   if (launcherLocked) {
-    return res.json({ success: false, message: "⛔ Reset in progress" });
+    return res.json({ success: false, message: "Reset in progress" });
   }
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
@@ -75,7 +71,7 @@ app.post('/login', (req, res) => {
     return res.json({ success: true });
   }
 
-  return res.json({ success: false, message: "❌ Invalid credentials" });
+  return res.json({ success: false, message: "Invalid credentials" });
 });
 
 app.get('/launcher', requireAuth, (req, res) => {
@@ -94,72 +90,103 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Python-style slow sender (NO parallel sending)
-async function sendSlow(transporter, mail) {
-  await transporter.sendMail(mail);
-
-  // 45–120 sec random delay
-  const wait = Math.floor(Math.random() * (120000 - 45000 + 1) + 45000);
-  console.log(`⏳ Waiting ${Math.floor(wait / 1000)} sec`);
-  await delay(wait);
+function getNextSender(senders) {
+  const sender = senders[senderIndex];
+  senderIndex = (senderIndex + 1) % senders.length;
+  return sender;
 }
 
-// ================= SEND MAIL =================
+// ================= BACKGROUND WORKER =================
+async function processQueue() {
+  if (isProcessing) return;
+  isProcessing = true;
+
+  while (sendQueue.length > 0) {
+    const job = sendQueue.shift();
+    const { transporter, mail, senderEmail } = job;
+
+    try {
+      await transporter.sendMail(mail);
+
+      // update hourly count
+      mailLimits[senderEmail].count++;
+
+      // 45–120 sec delay
+      const wait = Math.floor(Math.random() * (120000 - 45000 + 1) + 45000);
+      await delay(wait);
+
+    } catch (err) {
+      console.error("Send failed:", err.message);
+    }
+  }
+
+  isProcessing = false;
+}
+
+// ================= SEND =================
 app.post('/send', requireAuth, async (req, res) => {
   try {
-    const { senderName, email, password, recipients, subject, message } = req.body;
+    const { senderName, subject, message, recipients } = req.body;
 
-    if (!email || !password || !recipients) {
-      return res.json({ success: false, message: "Missing fields" });
+    if (!recipients) {
+      return res.json({ success: false, message: "Recipients required" });
     }
 
+    // 🔁 SENDER POOL (example – replace with your real IDs)
+    const senders = [
+      { email: "id1@yourdomain.in", pass: "APP_PASS_1" },
+      { email: "id2@yourdomain.in", pass: "APP_PASS_2" }
+    ];
+
+    const MAX_PER_HOUR = 15;
     const now = Date.now();
-    const MAX_PER_HOUR = 15; // SAFE LIMIT
-
-    if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
-      mailLimits[email] = { count: 0, startTime: now };
-    }
 
     const recipientList = recipients
       .split(/[\n,]+/)
       .map(r => r.trim())
       .filter(Boolean);
 
-    if (mailLimits[email].count + recipientList.length > MAX_PER_HOUR) {
-      return res.json({
-        success: false,
-        message: `❌ Max ${MAX_PER_HOUR}/hour allowed`
+    // prepare jobs
+    for (const r of recipientList) {
+      const sender = getNextSender(senders);
+
+      if (!mailLimits[sender.email] || now - mailLimits[sender.email].startTime > 60 * 60 * 1000) {
+        mailLimits[sender.email] = { count: 0, startTime: now };
+      }
+
+      if (mailLimits[sender.email].count >= MAX_PER_HOUR) {
+        continue;
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: "smtp.zoho.in",
+        port: 587,
+        secure: false,
+        auth: {
+          user: sender.email,
+          pass: sender.pass
+        }
+      });
+
+      sendQueue.push({
+        senderEmail: sender.email,
+        transporter,
+        mail: {
+          from: `"${senderName || 'Anonymous'}" <${sender.email}>`,
+          to: r,
+          subject: subject || "",
+          text: message || ""
+        }
       });
     }
 
-    // ⚠️ SMTP CONFIG
-    // 👉 Gmail (testing only)
-    // 👉 Zoho recommended for production
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",   // 🔁 change to smtp.zoho.in
-      port: 465,                // Zoho: 587
-      secure: true,             // Zoho: false
-      auth: {
-        user: email,
-        pass: password          // Gmail App Password / Zoho App Password
-      }
-    });
+    // 🔥 start background worker
+    processQueue();
 
-    for (const r of recipientList) {
-      const mail = {
-        from: `"${senderName || 'Anonymous'}" <${email}>`,
-        to: r,
-        subject: subject || "",   // ✅ ONLY USER-PROVIDED SUBJECT
-        text: message || ""
-      };
-
-      await sendSlow(transporter, mail);
-      mailLimits[email].count++;
-    }
-
+    // 🔥 immediate response to UI
     return res.json({
       success: true,
-      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/${MAX_PER_HOUR}`
+      message: `🚀 ${recipientList.length} mails queued & sending in background`
     });
 
   } catch (err) {
