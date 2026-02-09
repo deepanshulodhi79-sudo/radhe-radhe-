@@ -170,10 +170,9 @@ app.post('/send', requireAuth, async (req, res) => {
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
 
-      // subject remains same
-      subject: subject ? `Re: ${subject}` : "Re: No Subject",
+      // ✅ Re removed + inbox friendly subject
+      subject: subject || "Quick Note",
 
-      // ❌ footer REMOVED
       text: (message || "")
     }));
 
