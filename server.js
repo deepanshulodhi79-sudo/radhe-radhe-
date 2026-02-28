@@ -7,21 +7,16 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 10000; // Render default
 
 // 🔑 Hardcoded login
 const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
-
-// Per-sender hourly mail limit
 let mailLimits = {};
-
-// Global launcher lock
 let launcherLocked = false;
 
-// Session store
 const sessionStore = new session.MemoryStore();
 
 // ================= MIDDLEWARE =================
@@ -29,19 +24,22 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session (1 hour life)
 app.use(session({
-  secret: 'bulk-mailer-secret',
+  secret: process.env.SESSION_SECRET || 'bulk-mailer-secret',
   resave: false,
-  saveUninitialized: true,
+  saveUninitialized: false,
   store: sessionStore,
   cookie: {
-    maxAge: 60 * 60 * 1000 // 1 hour
+    maxAge: 60 * 60 * 1000
   }
 }));
 
-// ================= FULL RESET =================
+// ================= HEALTH CHECK =================
+app.get("/health", (req, res) => {
+  res.status(200).send("Server Running ✅");
+});
 
+// ================= FULL RESET =================
 function fullServerReset() {
   console.log("🔁 FULL LAUNCHER RESET");
 
@@ -54,12 +52,11 @@ function fullServerReset() {
 
   setTimeout(() => {
     launcherLocked = false;
-    console.log("✅ Launcher unlocked for fresh login");
+    console.log("✅ Launcher unlocked");
   }, 2000);
 }
 
 // ================= AUTH =================
-
 function requireAuth(req, res, next) {
   if (launcherLocked) return res.redirect('/');
   if (req.session.user) return next();
@@ -86,10 +83,7 @@ app.post('/login', (req, res) => {
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
     req.session.user = username;
-
-    // ⏱️ Full reset after 1 hour
     setTimeout(fullServerReset, 60 * 60 * 1000);
-
     return res.json({ success: true });
   }
 
@@ -101,7 +95,7 @@ app.get('/launcher', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// ================= LOGOUT =================
+// Logout
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
@@ -113,7 +107,6 @@ app.post('/logout', (req, res) => {
 });
 
 // ================= HELPERS =================
-
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -128,7 +121,6 @@ async function sendBatch(transporter, mails, batchSize = 5) {
 }
 
 // ================= SEND MAIL =================
-
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
@@ -142,7 +134,6 @@ app.post('/send', requireAuth, async (req, res) => {
 
     const now = Date.now();
 
-    // ⏱️ Hourly sender reset
     if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
       mailLimits[email] = { count: 0, startTime: now };
     }
@@ -169,11 +160,8 @@ app.post('/send', requireAuth, async (req, res) => {
     const mails = recipientList.map(r => ({
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
-
-      // ✅ Re removed + inbox friendly subject
       subject: subject || "Quick Note",
-
-      text: (message || "")
+      text: message || ""
     }));
 
     await sendBatch(transporter, mails, 5);
@@ -186,11 +174,12 @@ app.post('/send', requireAuth, async (req, res) => {
     });
 
   } catch (err) {
-    return res.json({ success: false, message: err.message });
+    console.error("Send Error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// ================= START =================
-app.listen(PORT, () => {
+// ================= START SERVER =================
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Mail Launcher running on port ${PORT}`);
 });
