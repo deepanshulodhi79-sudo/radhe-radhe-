@@ -1,8 +1,8 @@
 // server.js
 require('dotenv').config();
-
 const express = require('express');
 const session = require('express-session');
+const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const path = require('path');
 
@@ -14,34 +14,39 @@ const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
-const mailLimits = new Map();
+
+// Per-sender hourly mail limit
+let mailLimits = {};
+
+// Global launcher lock
 let launcherLocked = false;
 
 // Session store
 const sessionStore = new session.MemoryStore();
 
 // ================= MIDDLEWARE =================
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Session (1 hour life)
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'bulk-mailer-secret',
+  secret: 'bulk-mailer-secret',
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: true,
   store: sessionStore,
   cookie: {
-    maxAge: 60 * 60 * 1000,
-    httpOnly: true
+    maxAge: 60 * 60 * 1000 // 1 hour
   }
 }));
 
 // ================= FULL RESET =================
+
 function fullServerReset() {
   console.log("🔁 FULL LAUNCHER RESET");
 
   launcherLocked = true;
-  mailLimits.clear();
+  mailLimits = {};
 
   sessionStore.clear(() => {
     console.log("🧹 All sessions cleared");
@@ -54,6 +59,7 @@ function fullServerReset() {
 }
 
 // ================= AUTH =================
+
 function requireAuth(req, res, next) {
   if (launcherLocked) return res.redirect('/');
   if (req.session.user) return next();
@@ -107,17 +113,22 @@ app.post('/logout', (req, res) => {
 });
 
 // ================= HELPERS =================
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 async function sendBatch(transporter, mails, batchSize = 5) {
   for (let i = 0; i < mails.length; i += batchSize) {
-    const batch = mails.slice(i, i + batchSize);
-    await Promise.allSettled(batch.map(m => transporter.sendMail(m)));
+    await Promise.allSettled(
+      mails.slice(i, i + batchSize).map(m => transporter.sendMail(m))
+    );
     await delay(300);
   }
 }
 
 // ================= SEND MAIL =================
+
 app.post('/send', requireAuth, async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
@@ -132,50 +143,49 @@ app.post('/send', requireAuth, async (req, res) => {
     const now = Date.now();
 
     // ⏱️ Hourly sender reset
-    if (!mailLimits.has(email) || now - mailLimits.get(email).startTime > 3600000) {
-      mailLimits.set(email, { count: 0, startTime: now });
+    if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
+      mailLimits[email] = { count: 0, startTime: now };
     }
-
-    const senderData = mailLimits.get(email);
 
     const recipientList = recipients
       .split(/[\n,]+/)
       .map(r => r.trim())
       .filter(Boolean);
 
-    if (senderData.count + recipientList.length > 27) {
+    if (mailLimits[email].count + recipientList.length > 27) {
       return res.json({
         success: false,
-        message: `❌ Max 27 mails/hour | Remaining: ${27 - senderData.count}`
+        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[email].count}`
       });
     }
 
     const transporter = nodemailer.createTransport({
-      service: "gmail", // modern shortcut
-      auth: {
-        user: email,
-        pass: password
-      }
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: { user: email, pass: password }
     });
 
     const mails = recipientList.map(r => ({
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
+
+      // ✅ Re removed + inbox friendly subject
       subject: subject || "Quick Note",
-      text: message || ""
+
+      text: (message || "")
     }));
 
     await sendBatch(transporter, mails, 5);
 
-    senderData.count += recipientList.length;
+    mailLimits[email].count += recipientList.length;
 
     return res.json({
       success: true,
-      message: `✅ Sent ${recipientList.length} | Used ${senderData.count}/27`
+      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
     });
 
   } catch (err) {
-    console.error(err);
     return res.json({ success: false, message: err.message });
   }
 });
