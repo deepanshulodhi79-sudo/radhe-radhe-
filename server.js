@@ -14,7 +14,6 @@ const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
-
 let mailLimits = {};
 let launcherLocked = false;
 const sessionStore = new session.MemoryStore();
@@ -29,13 +28,10 @@ app.use(session({
   resave: false,
   saveUninitialized: true,
   store: sessionStore,
-  cookie: {
-    maxAge: 60 * 60 * 1000
-  }
+  cookie: { maxAge: 60 * 60 * 1000 }
 }));
 
 // ================= FULL RESET =================
-
 function fullServerReset() {
   console.log("🔁 FULL LAUNCHER RESET");
 
@@ -48,12 +44,11 @@ function fullServerReset() {
 
   setTimeout(() => {
     launcherLocked = false;
-    console.log("✅ Launcher unlocked for fresh login");
+    console.log("✅ Launcher unlocked");
   }, 2000);
 }
 
 // ================= AUTH =================
-
 function requireAuth(req, res, next) {
   if (launcherLocked) return res.redirect('/');
   if (req.session.user) return next();
@@ -61,7 +56,6 @@ function requireAuth(req, res, next) {
 }
 
 // ================= ROUTES =================
-
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
@@ -72,13 +66,12 @@ app.post('/login', (req, res) => {
   if (launcherLocked) {
     return res.json({
       success: false,
-      message: "⛔ Launcher reset ho raha hai, thodi der baad login karo"
+      message: "⛔ Reset ho raha hai, baad me try karo"
     });
   }
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
     req.session.user = username;
-
     setTimeout(fullServerReset, 60 * 60 * 1000);
     return res.json({ success: true });
   }
@@ -96,20 +89,41 @@ app.post('/logout', (req, res) => {
     res.clearCookie('connect.sid');
     return res.json({
       success: true,
-      message: "✅ Logged out successfully"
+      message: "✅ Logged out"
     });
   });
 });
 
 // ================= HELPERS =================
 
-// 🚀 ULTRA FAST VERSION
-async function sendBatch(transporter, mails, batchSize = 10) {
-  for (let i = 0; i < mails.length; i += batchSize) {
+// 🎲 random generator
+function random(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 🧠 SMART STEALTH SENDING
+async function sendBatch(transporter, mails) {
+  let i = 0;
+
+  while (i < mails.length) {
+    // 🔄 Random batch size (2–4)
+    const batchSize = random(2, 4);
+
+    const batch = mails.slice(i, i + batchSize);
+
     await Promise.allSettled(
-      mails.slice(i, i + batchSize).map(m => transporter.sendMail(m))
+      batch.map(m => transporter.sendMail(m))
     );
-    // ❌ no delay (max speed)
+
+    i += batchSize;
+
+    // ⏳ Random delay (400–1200 ms)
+    const wait = random(400, 1200);
+    await delay(wait);
   }
 }
 
@@ -137,10 +151,10 @@ app.post('/send', requireAuth, async (req, res) => {
       .map(r => r.trim())
       .filter(Boolean);
 
-    if (mailLimits[email].count + recipientList.length > 27) {
+    if (mailLimits[email].count + recipientList.length > 25) {
       return res.json({
         success: false,
-        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[email].count}`
+        message: `❌ Max 25 mails/hour | Remaining: ${25 - mailLimits[email].count}`
       });
     }
 
@@ -154,17 +168,22 @@ app.post('/send', requireAuth, async (req, res) => {
     const mails = recipientList.map(r => ({
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
-      subject: subject || "Quick Note",
+
+      // 🎯 Slight subject variation
+      subject: subject
+        ? `${subject} ${random(1, 999)}`
+        : `Quick Note ${random(1, 999)}`,
+
       text: (message || "")
     }));
 
-    await sendBatch(transporter, mails, 10);
+    await sendBatch(transporter, mails);
 
     mailLimits[email].count += recipientList.length;
 
     return res.json({
       success: true,
-      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
+      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/25`
     });
 
   } catch (err) {
