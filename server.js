@@ -165,15 +165,11 @@ app.post('/send', requireAuth, async (req, res) => {
       auth: { user: email, pass: password }
     });
 
+    // ✅ CLEAN SUBJECT (no random numbers)
     const mails = recipientList.map(r => ({
       from: `"${senderName || 'Anonymous'}" <${email}>`,
       to: r,
-
-      // 🎯 Slight subject variation
-      subject: subject
-        ? `${subject} ${random(1, 999)}`
-        : `Quick Note ${random(1, 999)}`,
-
+      subject: subject || "Quick Note",
       text: (message || "")
     }));
 
