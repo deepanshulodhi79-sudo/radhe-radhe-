@@ -1,22 +1,20 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
-const sgMail = require('@sendgrid/mail'); // ✅ changed
+const sgMail = require('@sendgrid/mail');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY); // ✅ added
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // 🔑 Hardcoded login
 const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
 // ================= GLOBAL STATE =================
-
 let mailLimits = {};
 let launcherLocked = false;
 const sessionStore = new session.MemoryStore();
@@ -100,38 +98,44 @@ app.post('/logout', (req, res) => {
 });
 
 // ================= HELPERS =================
-
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ✅ SAME function name, internal change only
-async function sendBatch(transporter, mails, batchSize = 5) {
+// ✅ UPDATED batch sender with error logs
+async function sendBatch(mails, batchSize = 5) {
   for (let i = 0; i < mails.length; i += batchSize) {
-    await Promise.allSettled(
-      mails.slice(i, i + batchSize).map(m => sgMail.send(m)) // ✅ changed
+    const results = await Promise.allSettled(
+      mails.slice(i, i + batchSize).map(m => sgMail.send(m))
     );
+
+    results.forEach(r => {
+      if (r.status === "rejected") {
+        console.log("❌ Mail failed:", r.reason.response?.body || r.reason);
+      }
+    });
+
     await delay(300);
   }
 }
 
 // ================= SEND MAIL =================
-
 app.post('/send', requireAuth, async (req, res) => {
   try {
-    const { senderName, email, password, recipients, subject, message } = req.body;
+    const { senderName, recipients, subject, message } = req.body;
 
-    if (!email || !recipients) {
+    if (!recipients) {
       return res.json({
         success: false,
-        message: "Email and recipients required"
+        message: "Recipients required"
       });
     }
 
     const now = Date.now();
+    const sender = process.env.VERIFIED_EMAIL;
 
-    if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
-      mailLimits[email] = { count: 0, startTime: now };
+    if (!mailLimits[sender] || now - mailLimits[sender].startTime > 60 * 60 * 1000) {
+      mailLimits[sender] = { count: 0, startTime: now };
     }
 
     const recipientList = recipients
@@ -139,35 +143,35 @@ app.post('/send', requireAuth, async (req, res) => {
       .map(r => r.trim())
       .filter(Boolean);
 
-    if (mailLimits[email].count + recipientList.length > 27) {
+    if (mailLimits[sender].count + recipientList.length > 27) {
       return res.json({
         success: false,
-        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[email].count}`
+        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[sender].count}`
       });
     }
 
-    // ❌ transporter removed
-
+    // ✅ FIXED MAIL STRUCTURE
     const mails = recipientList.map(r => ({
       to: r,
       from: {
-        email: email, // must be verified in SendGrid
-        name: senderName || "Anonymous"
+        email: process.env.VERIFIED_EMAIL, // ✅ VERIFIED EMAIL
+        name: senderName || "Mailer"
       },
       subject: subject || "Quick Note",
-      text: (message || "")
+      text: message || ""
     }));
 
-    await sendBatch(null, mails, 5); // transporter not needed
+    await sendBatch(mails, 5);
 
-    mailLimits[email].count += recipientList.length;
+    mailLimits[sender].count += recipientList.length;
 
     return res.json({
       success: true,
-      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
+      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[sender].count}/27`
     });
 
   } catch (err) {
+    console.log("🔥 ERROR:", err.response?.body || err.message);
     return res.json({ success: false, message: err.message });
   }
 });
