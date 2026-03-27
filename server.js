@@ -1,285 +1,196 @@
-"use strict";
-
-const express = require("express");
-const session = require("express-session");
-const nodemailer = require("nodemailer");
-const path = require("path");
-const crypto = require("crypto");
+// server.js
+require('dotenv').config();
+const express = require('express');
+const session = require('express-session');
+const bodyParser = require('body-parser');
+const nodemailer = require('nodemailer');
+const path = require('path');
 
 const app = express();
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 
-/* ================= CONFIG ================= */
+// 🔑 Hardcoded login
+const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
+const HARD_PASSWORD = "!@#$%^&*())(*&^%$#@!@#$%^&*";
 
-const ADMIN_LOGIN = "@##2588^$$^O^%%^@#";
+// ================= GLOBAL STATE =================
 
-const SESSION_SECRET = crypto.randomBytes(32).toString("hex");
-const SESSION_TIME = 60 * 60 * 1000;
+// Per-sender hourly mail limit
+let mailLimits = {};
 
-const BATCH_SIZE = 5;
-const BATCH_DELAY = 300;
+// Global launcher lock
+let launcherLocked = false;
 
-const DAILY_LIMIT = 500;
+// Session store
+const sessionStore = new session.MemoryStore();
 
-/* ================= EXPRESS ================= */
+// ================= MIDDLEWARE =================
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.disable("x-powered-by");
-
-app.use(express.json({ limit: "25kb" }));
-app.use(express.urlencoded({ extended: false, limit: "25kb" }));
-app.use(express.static(path.join(__dirname, "public")));
-
-app.use(
-  session({
-    name: "secure.sid",
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: "strict",
-      maxAge: SESSION_TIME
-    }
-  })
-);
-
-/* ================= SECURITY HEADERS ================= */
-
-app.use((req, res, next) => {
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Referrer-Policy", "no-referrer");
-  next();
-});
-
-/* ================= RATE LIMIT ================= */
-
-const ipLimiter = new Map();
-
-app.use((req, res, next) => {
-
-  const ip = req.ip;
-  const now = Date.now();
-  const record = ipLimiter.get(ip);
-
-  if (!record || now - record.start > 60000) {
-    ipLimiter.set(ip, { count: 1, start: now });
-    return next();
+// Session (1 hour life)
+app.use(session({
+  secret: 'bulk-mailer-secret',
+  resave: false,
+  saveUninitialized: true,
+  store: sessionStore,
+  cookie: {
+    maxAge: 60 * 60 * 1000 // 1 hour
   }
+}));
 
-  if (record.count > 100) {
-    return res.status(429).send("Too many requests");
-  }
+// ================= FULL RESET =================
 
-  record.count++;
+function fullServerReset() {
+  console.log("🔁 FULL LAUNCHER RESET");
 
-  next();
-});
+  launcherLocked = true;
+  mailLimits = {};
 
-/* ================= HELPERS ================= */
+  sessionStore.clear(() => {
+    console.log("🧹 All sessions cleared");
+  });
 
-const delay = ms => new Promise(r => setTimeout(r, ms));
-
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function cleanHeader(text = "", max = 120) {
-  return text.replace(/[\r\n]/g, "").trim().slice(0, max);
+  setTimeout(() => {
+    launcherLocked = false;
+    console.log("✅ Launcher unlocked for fresh login");
+  }, 2000);
 }
 
-function preserveText(text = "", max = 20000) {
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").slice(0, max);
-}
-
-/* ================= DAILY LIMIT ================= */
-
-const dailyCounter = new Map();
-
-function checkDailyLimit(sender, amount) {
-
-  const now = Date.now();
-  const record = dailyCounter.get(sender);
-
-  if (!record || now - record.start > 86400000) {
-    dailyCounter.set(sender, { count: 0, start: now });
-  }
-
-  const updated = dailyCounter.get(sender);
-
-  if (updated.count + amount > DAILY_LIMIT) {
-    return false;
-  }
-
-  updated.count += amount;
-
-  return true;
-}
-
-/* ================= AUTH ================= */
+// ================= AUTH =================
 
 function requireAuth(req, res, next) {
-
-  if (req.session.user === ADMIN_LOGIN) return next();
-
-  res.redirect("/");
+  if (launcherLocked) return res.redirect('/');
+  if (req.session.user) return next();
+  return res.redirect('/');
 }
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/login.html"));
+// ================= ROUTES =================
+
+// Login page
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-app.post("/login", (req, res) => {
+// Login
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
 
-  const { username, password } = req.body || {};
+  if (launcherLocked) {
+    return res.json({
+      success: false,
+      message: "⛔ Launcher reset ho raha hai, thodi der baad login karo"
+    });
+  }
 
-  if (username === ADMIN_LOGIN && password === ADMIN_LOGIN) {
+  if (username === HARD_USERNAME && password === HARD_PASSWORD) {
+    req.session.user = username;
 
-    req.session.user = ADMIN_LOGIN;
+    // ⏱️ Full reset after 1 hour
+    setTimeout(fullServerReset, 60 * 60 * 1000);
 
     return res.json({ success: true });
   }
 
-  res.json({ success: false });
+  return res.json({ success: false, message: "❌ Invalid credentials" });
 });
 
-app.get("/launcher", requireAuth, (req, res) => {
-
-  res.sendFile(path.join(__dirname, "public/launcher.html"));
-
+// Launcher page
+app.get('/launcher', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-app.post("/logout", (req, res) => {
-
+// ================= LOGOUT =================
+app.post('/logout', (req, res) => {
   req.session.destroy(() => {
-
-    res.clearCookie("secure.sid");
-
-    res.json({ success: true });
-
+    res.clearCookie('connect.sid');
+    return res.json({
+      success: true,
+      message: "✅ Logged out successfully"
+    });
   });
-
 });
 
-/* ================= SEND MAIL ================= */
+// ================= HELPERS =================
 
-app.post("/send", requireAuth, async (req, res) => {
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
+async function sendBatch(transporter, mails, batchSize = 5) {
+  for (let i = 0; i < mails.length; i += batchSize) {
+    await Promise.allSettled(
+      mails.slice(i, i + batchSize).map(m => transporter.sendMail(m))
+    );
+    await delay(300);
+  }
+}
+
+// ================= SEND MAIL =================
+
+app.post('/send', requireAuth, async (req, res) => {
   try {
-
-    const { senderName, email, password, recipients, subject, message } =
-      req.body || {};
+    const { senderName, email, password, recipients, subject, message } = req.body;
 
     if (!email || !password || !recipients) {
-
-      return res.json({ success: false, message: "Missing fields" });
-
+      return res.json({
+        success: false,
+        message: "Email, password and recipients required"
+      });
     }
 
-    if (!emailRegex.test(email)) {
+    const now = Date.now();
 
-      return res.json({ success: false, message: "Invalid email" });
-
+    // ⏱️ Hourly sender reset
+    if (!mailLimits[email] || now - mailLimits[email].startTime > 60 * 60 * 1000) {
+      mailLimits[email] = { count: 0, startTime: now };
     }
 
-    const list = [
-      ...new Set(
-        recipients
-          .split(/[\n,]+/)
-          .map(r => r.trim())
-          .filter(r => emailRegex.test(r))
-      )
-    ];
+    const recipientList = recipients
+      .split(/[\n,]+/)
+      .map(r => r.trim())
+      .filter(Boolean);
 
-    if (!list.length) {
-
-      return res.json({ success: false, message: "No recipients" });
-
-    }
-
-    if (!checkDailyLimit(email, list.length)) {
-
-      return res.json({ success: false, message: "Daily limit reached" });
-
+    if (mailLimits[email].count + recipientList.length > 27) {
+      return res.json({
+        success: false,
+        message: `❌ Max 27 mails/hour | Remaining: ${27 - mailLimits[email].count}`
+      });
     }
 
     const transporter = nodemailer.createTransport({
-
-      service: "gmail",
-
-      auth: {
-
-        user: email,
-
-        pass: password
-
-      }
-
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: { user: email, pass: password }
     });
 
-    await transporter.verify();
+    const mails = recipientList.map(r => ({
+      from: `"${senderName || 'Anonymous'}" <${email}>`,
+      to: r,
 
-    const finalName = cleanHeader(senderName || email);
-    const finalSubject = cleanHeader(subject || "Message");
-    const finalText = preserveText(message || "");
+      // ✅ Re removed + inbox friendly subject
+      subject: subject || "Quick Note",
 
-    let sent = 0;
+      text: (message || "")
+    }));
 
-    for (let i = 0; i < list.length; i += BATCH_SIZE) {
+    await sendBatch(transporter, mails, 5);
 
-      const batch = list.slice(i, i + BATCH_SIZE);
+    mailLimits[email].count += recipientList.length;
 
-      const result = await Promise.allSettled(
-
-        batch.map(to =>
-          transporter.sendMail({
-
-            from: `"${finalName}" <${email}>`,
-
-            to,
-
-            subject: finalSubject,
-
-            text: finalText
-
-          })
-        )
-      );
-
-      result.forEach(r => {
-
-        if (r.status === "fulfilled") sent++;
-
-      });
-
-      await delay(BATCH_DELAY);
-
-    }
-
-    res.json({
-
+    return res.json({
       success: true,
-
-      message: `Send ${sent}`
-
+      message: `✅ Sent ${recipientList.length} | Used ${mailLimits[email].count}/27`
     });
 
   } catch (err) {
-
-    res.json({
-
-      success: false,
-
-      message: "Sending failed"
-
-    });
-
+    return res.json({ success: false, message: err.message });
   }
-
 });
 
-/* ================= START ================= */
-
+// ================= START =================
 app.listen(PORT, () => {
-
-  console.log("Server running on port " + PORT);
-
+  console.log(`🚀 Mail Launcher running on port ${PORT}`);
 });
