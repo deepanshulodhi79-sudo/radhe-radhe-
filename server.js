@@ -30,82 +30,62 @@ app.use(session({
   cookie: { maxAge: 60 * 60 * 1000 }
 }));
 
-app.get("/health", (req, res) => res.send("Server Running ✅"));
-
-function fullServerReset() {
-  launcherLocked = true;
-  mailLimits = {};
-  sessionStore.clear(() => {});
-  setTimeout(() => launcherLocked = false, 2000);
-}
-
-function requireAuth(req, res, next) {
-  if (launcherLocked) return res.redirect('/');
-  if (req.session.user) return next();
-  return res.redirect('/');
-}
-
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-app.post('/login', (req, res) => {
+app.post("/login", (req, res) => {
   const { username, password } = req.body;
-
-  if (launcherLocked) {
-    return res.json({ success: false, message: "⛔ Reset ho raha hai" });
-  }
 
   if (username === HARD_USERNAME && password === HARD_PASSWORD) {
     req.session.user = username;
-    setTimeout(fullServerReset, 60 * 60 * 1000);
     return res.json({ success: true });
   }
 
-  return res.json({ success: false, message: "❌ Invalid credentials" });
+  res.json({ success: false });
 });
 
-app.get('/launcher', requireAuth, (req, res) => {
+function requireAuth(req, res, next) {
+  if (req.session.user) return next();
+  res.redirect("/");
+}
+
+app.get("/launcher", requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-app.post('/logout', (req, res) => {
+app.post("/logout", (req, res) => {
   req.session.destroy(() => {
-    res.clearCookie('connect.sid');
-    res.json({ success: true, message: "Logged out" });
+    res.clearCookie("connect.sid");
+    res.json({ success: true });
   });
 });
 
-// 🔥 SEND MAIL
-app.post('/send', requireAuth, upload.array('images'), async (req, res) => {
+// 🔥 SEND MAIL (INLINE IMAGE)
+app.post("/send", requireAuth, upload.array("images"), async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
-
-    if (!email || !password || !recipients) {
-      return res.json({ success: false, message: "Required fields missing" });
-    }
 
     const list = recipients.split(/[\n,]+/).map(r => r.trim()).filter(Boolean);
 
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
+      service: "gmail",
       auth: { user: email, pass: password }
     });
 
     const mails = list.map(r => {
       let mailOptions = {
-        from: `"${senderName || 'Anonymous'}" <${email}>`,
+        from: `"${senderName}" <${email}>`,
         to: r,
-        subject: subject || "Quick Note",
-        text: message || ""
+        subject: subject,
+        html: message // 🔥 IMPORTANT (HTML mail)
       };
 
       if (req.files && req.files.length > 0) {
-        mailOptions.attachments = req.files.map(file => ({
+        mailOptions.attachments = req.files.map((file, i) => ({
           filename: file.originalname,
-          content: file.buffer
+          content: file.buffer,
+          cid: "img" + i
         }));
       }
 
@@ -116,11 +96,11 @@ app.post('/send', requireAuth, upload.array('images'), async (req, res) => {
       await transporter.sendMail(m);
     }
 
-    res.json({ success: true, message: `✅ Sent ${list.length}` });
+    res.json({ success: true, message: "✅ Mail Sent Successfully" });
 
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: false, message: err.message });
   }
 });
 
-app.listen(PORT, () => console.log("🚀 Running"));
+app.listen(PORT, () => console.log("🚀 Server running"));
