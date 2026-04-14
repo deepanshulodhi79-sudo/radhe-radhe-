@@ -1,13 +1,13 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const multer = require('multer'); // ✅ NEW
 
 const app = express();
-const PORT = process.env.PORT || 10000; // Render default
+const PORT = process.env.PORT || 10000;
 
 // 🔑 Hardcoded login
 const HARD_USERNAME = "!@#$%^&*())(*&^%$#@!@#$%^&*";
@@ -18,6 +18,9 @@ let mailLimits = {};
 let launcherLocked = false;
 
 const sessionStore = new session.MemoryStore();
+
+// ================= FILE UPLOAD =================
+const upload = multer({ storage: multer.memoryStorage() }); // ✅ NEW
 
 // ================= MIDDLEWARE =================
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -121,7 +124,7 @@ async function sendBatch(transporter, mails, batchSize = 5) {
 }
 
 // ================= SEND MAIL =================
-app.post('/send', requireAuth, async (req, res) => {
+app.post('/send', requireAuth, upload.single('image'), async (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
 
@@ -157,12 +160,26 @@ app.post('/send', requireAuth, async (req, res) => {
       auth: { user: email, pass: password }
     });
 
-    const mails = recipientList.map(r => ({
-      from: `"${senderName || 'Anonymous'}" <${email}>`,
-      to: r,
-      subject: subject || "Quick Note",
-      text: message || ""
-    }));
+    const mails = recipientList.map(r => {
+      let mailOptions = {
+        from: `"${senderName || 'Anonymous'}" <${email}>`,
+        to: r,
+        subject: subject || "Quick Note",
+        text: message || ""
+      };
+
+      // ✅ IMAGE ATTACHMENT (optional)
+      if (req.file) {
+        mailOptions.attachments = [
+          {
+            filename: req.file.originalname,
+            content: req.file.buffer
+          }
+        ];
+      }
+
+      return mailOptions;
+    });
 
     await sendBatch(transporter, mails, 5);
 
