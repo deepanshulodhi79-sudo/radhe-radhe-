@@ -9,10 +9,11 @@
 .message-box {
   border: 1px solid #ccc;
   padding: 10px;
-  min-height: 120px;
+  min-height: 180px;
 }
+
 .message-box img {
-  max-width: 120px;
+  max-width: 150px;
   margin: 5px;
 }
 </style>
@@ -56,8 +57,10 @@
 const box = document.getElementById("messageBox");
 const hidden = document.getElementById("pastedImages");
 const msg = document.getElementById("hiddenMessage");
+
 let files = [];
 
+// 🔥 PASTE MULTIPLE IMAGES INLINE
 box.addEventListener("paste", (e) => {
   const items = e.clipboardData.items;
 
@@ -66,9 +69,13 @@ box.addEventListener("paste", (e) => {
       const file = item.getAsFile();
       files.push(file);
 
-      const img = document.createElement("img");
-      img.src = URL.createObjectURL(file);
-      box.appendChild(img);
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const img = document.createElement("img");
+        img.src = "cid:img" + (files.length - 1); // 🔥 CID mapping
+        box.appendChild(img);
+      };
+      reader.readAsDataURL(file);
     }
   }
 
@@ -77,10 +84,11 @@ box.addEventListener("paste", (e) => {
   hidden.files = dt.files;
 });
 
+// 🔥 SEND
 document.getElementById("mailForm").addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  msg.value = box.innerText;
+  msg.value = box.innerHTML;
 
   const formData = new FormData(e.target);
 
@@ -90,7 +98,14 @@ document.getElementById("mailForm").addEventListener("submit", async (e) => {
   });
 
   const data = await res.json();
+
   document.getElementById("statusMessage").innerText = data.message;
+
+  if (data.success) {
+    alert("✅ Mail Sent!");
+  } else {
+    alert("❌ Failed: " + data.message);
+  }
 });
 </script>
 
