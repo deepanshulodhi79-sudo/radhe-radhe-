@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mail Launcher</title>
+<title>Fast Mail Launcher</title>
 <link rel="stylesheet" href="style.css">
 </head>
 
@@ -11,28 +11,28 @@
 <form id="mailForm" enctype="multipart/form-data">
 
 <div class="form-grid">
-<h2>📧 Mail Launcher</h2>
+<h2>📧 Fast Mail Launcher</h2>
 
 <div class="grid-row">
-<input name="senderName" id="senderName" placeholder="Name">
-<input name="email" id="email" placeholder="Email">
+<input id="senderName" name="senderName" placeholder="Sender Name">
+<input id="email" name="email" placeholder="Your Gmail">
 </div>
 
 <div class="grid-row">
-<input name="password" id="pass" placeholder="App Password">
-<input name="subject" id="subject" placeholder="Subject">
+<input id="pass" name="password" type="password" placeholder="App Password">
+<input id="subject" name="subject" placeholder="Subject">
 </div>
 
 <div class="grid-row">
 <div id="messageBox" class="message-box" contenteditable="true"></div>
-<textarea name="recipients" id="recipients"></textarea>
+<textarea id="recipients" name="recipients" placeholder="Recipients (comma or newline)"></textarea>
 </div>
 
 <input type="hidden" name="message" id="hiddenMessage">
 <input type="file" id="imageInput" name="images" multiple hidden>
 
 <div class="grid-row">
-<button type="submit" id="sendBtn">Send</button>
+<button type="submit">Send All</button>
 <button type="button" id="logoutBtn">Logout</button>
 </div>
 
@@ -49,7 +49,7 @@ const hiddenInput = document.getElementById("imageInput");
 
 let files = [];
 
-// ✅ IMAGE PASTE
+// 🔥 IMAGE PASTE (multiple)
 box.addEventListener("paste", (e) => {
   const items = e.clipboardData.items;
 
@@ -69,7 +69,7 @@ box.addEventListener("paste", (e) => {
   hiddenInput.files = dt.files;
 });
 
-// ✅ SEND MAIL (FIXED)
+// 🔥 SEND MAIL (FIXED)
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -95,7 +95,7 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-// ✅ LOGOUT FIX
+// 🔥 LOGOUT
 document.getElementById("logoutBtn").addEventListener("click", () => {
   fetch("/logout", { method: "POST" })
     .then(() => window.location.href = "/");
