@@ -4,19 +4,6 @@
 <meta charset="UTF-8">
 <title>Mail Launcher</title>
 <link rel="stylesheet" href="style.css">
-
-<style>
-.message-box {
-  border: 1px solid #ccc;
-  padding: 10px;
-  min-height: 180px;
-}
-
-.message-box img {
-  max-width: 150px;
-  margin: 5px;
-}
-</style>
 </head>
 
 <body>
@@ -37,12 +24,12 @@
 </div>
 
 <div class="grid-row">
-<div id="messageBox" contenteditable="true" class="message-box"></div>
-<textarea name="recipients" placeholder="Recipients"></textarea>
+<div id="messageBox" class="message-box" contenteditable="true"></div>
+<textarea name="recipients" placeholder="Recipients (comma or newline)"></textarea>
 </div>
 
 <input type="hidden" name="message" id="hiddenMessage">
-<input type="file" id="pastedImages" name="images" multiple style="display:none;">
+<input type="file" id="imageInput" name="images" multiple hidden>
 
 <div class="grid-row">
 <button type="submit">Send</button>
@@ -55,12 +42,12 @@
 
 <script>
 const box = document.getElementById("messageBox");
-const hidden = document.getElementById("pastedImages");
-const msg = document.getElementById("hiddenMessage");
+const hiddenInput = document.getElementById("imageInput");
+const hiddenMsg = document.getElementById("hiddenMessage");
 
 let files = [];
 
-// 🔥 PASTE MULTIPLE IMAGES INLINE
+// 🔥 MULTIPLE IMAGE PASTE
 box.addEventListener("paste", (e) => {
   const items = e.clipboardData.items;
 
@@ -69,26 +56,22 @@ box.addEventListener("paste", (e) => {
       const file = item.getAsFile();
       files.push(file);
 
-      const reader = new FileReader();
-      reader.onload = function(ev) {
-        const img = document.createElement("img");
-        img.src = "cid:img" + (files.length - 1); // 🔥 CID mapping
-        box.appendChild(img);
-      };
-      reader.readAsDataURL(file);
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(file);
+      box.appendChild(img);
     }
   }
 
   const dt = new DataTransfer();
   files.forEach(f => dt.items.add(f));
-  hidden.files = dt.files;
+  hiddenInput.files = dt.files;
 });
 
-// 🔥 SEND
+// 🔥 SEND MAIL
 document.getElementById("mailForm").addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  msg.value = box.innerHTML;
+  hiddenMsg.value = box.innerHTML;
 
   const formData = new FormData(e.target);
 
@@ -102,7 +85,7 @@ document.getElementById("mailForm").addEventListener("submit", async (e) => {
   document.getElementById("statusMessage").innerText = data.message;
 
   if (data.success) {
-    alert("✅ Mail Sent!");
+    alert("✅ Mail Sent Successfully");
   } else {
     alert("❌ Failed: " + data.message);
   }
