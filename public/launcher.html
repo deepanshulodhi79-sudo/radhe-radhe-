@@ -14,40 +14,42 @@
 <h2>📧 Mail Launcher</h2>
 
 <div class="grid-row">
-<input name="senderName" placeholder="Name">
-<input name="email" placeholder="Email">
+<input name="senderName" id="senderName" placeholder="Name">
+<input name="email" id="email" placeholder="Email">
 </div>
 
 <div class="grid-row">
-<input name="password" placeholder="App Password">
-<input name="subject" placeholder="Subject">
+<input name="password" id="pass" placeholder="App Password">
+<input name="subject" id="subject" placeholder="Subject">
 </div>
 
 <div class="grid-row">
 <div id="messageBox" class="message-box" contenteditable="true"></div>
-<textarea name="recipients" placeholder="Recipients (comma or newline)"></textarea>
+<textarea name="recipients" id="recipients"></textarea>
 </div>
 
 <input type="hidden" name="message" id="hiddenMessage">
 <input type="file" id="imageInput" name="images" multiple hidden>
 
 <div class="grid-row">
-<button type="submit">Send</button>
+<button type="submit" id="sendBtn">Send</button>
+<button type="button" id="logoutBtn">Logout</button>
 </div>
 
 <p id="statusMessage"></p>
-</div>
 
+</div>
 </form>
 
 <script>
+const form = document.getElementById("mailForm");
 const box = document.getElementById("messageBox");
-const hiddenInput = document.getElementById("imageInput");
 const hiddenMsg = document.getElementById("hiddenMessage");
+const hiddenInput = document.getElementById("imageInput");
 
 let files = [];
 
-// 🔥 MULTIPLE IMAGE PASTE
+// ✅ IMAGE PASTE
 box.addEventListener("paste", (e) => {
   const items = e.clipboardData.items;
 
@@ -67,13 +69,15 @@ box.addEventListener("paste", (e) => {
   hiddenInput.files = dt.files;
 });
 
-// 🔥 SEND MAIL
-document.getElementById("mailForm").addEventListener("submit", async (e) => {
+// ✅ SEND MAIL (FIXED)
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   hiddenMsg.value = box.innerHTML;
 
-  const formData = new FormData(e.target);
+  const formData = new FormData(form);
+
+  document.getElementById("statusMessage").innerText = "⏳ Sending...";
 
   const res = await fetch("/send", {
     method: "POST",
@@ -89,6 +93,12 @@ document.getElementById("mailForm").addEventListener("submit", async (e) => {
   } else {
     alert("❌ Failed: " + data.message);
   }
+});
+
+// ✅ LOGOUT FIX
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  fetch("/logout", { method: "POST" })
+    .then(() => window.location.href = "/");
 });
 </script>
 
