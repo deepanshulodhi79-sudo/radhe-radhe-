@@ -1,112 +1,96 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Fast Mail Launcher</title>
+<title>Mail Launcher</title>
 <link rel="stylesheet" href="style.css">
 
 <style>
-  .logout-hint {
-    font-size: 12px;
-    color: #888;
-    margin-top: 4px;
-  }
+.message-box {
+  border: 1px solid #ccc;
+  padding: 10px;
+  min-height: 120px;
+}
+.message-box img {
+  max-width: 120px;
+  margin: 5px;
+}
 </style>
 </head>
 
 <body>
 
-<!-- ✅ FORM ADDED (important for file upload) -->
 <form id="mailForm" enctype="multipart/form-data">
 
 <div class="form-grid">
-  <h2>📧 Fast Mail Launcher</h2>
+<h2>📧 Mail Launcher</h2>
 
-  <div class="grid-row">
-    <input id="senderName" name="senderName" placeholder="Sender Name">
-    <input id="email" name="email" placeholder="Your Gmail">
-  </div>
+<div class="grid-row">
+<input name="senderName" placeholder="Name">
+<input name="email" placeholder="Email">
+</div>
 
-  <div class="grid-row">
-    <input id="pass" name="password" type="password" placeholder="App Password">
-    <input id="subject" name="subject" placeholder="Subject">
-  </div>
+<div class="grid-row">
+<input name="password" placeholder="App Password">
+<input name="subject" placeholder="Subject">
+</div>
 
-  <div class="grid-row">
-    <textarea id="message" name="message" placeholder="Message Body"></textarea>
-    <textarea id="recipients" name="recipients" placeholder="Recipients (comma or newline)"></textarea>
-  </div>
+<div class="grid-row">
+<div id="messageBox" contenteditable="true" class="message-box"></div>
+<textarea name="recipients" placeholder="Recipients"></textarea>
+</div>
 
-  <!-- ✅ NEW IMAGE INPUT -->
-  <div class="grid-row">
-    <input type="file" name="image" accept="image/*">
-  </div>
+<input type="hidden" name="message" id="hiddenMessage">
+<input type="file" id="pastedImages" name="images" multiple style="display:none;">
 
-  <div class="grid-row">
-    <button type="submit" id="sendBtn">Send All</button>
+<div class="grid-row">
+<button type="submit">Send</button>
+</div>
 
-    <div>
-      <button type="button" id="logoutBtn" title="Double click to logout">Logout</button>
-      <div class="logout-hint">Double-click to logout</div>
-    </div>
-  </div>
-
-  <p id="statusMessage"></p>
+<p id="statusMessage"></p>
 </div>
 
 </form>
 
-<script src="script.js"></script>
-
 <script>
-/* ===============================
-   SEND MAIL WITH IMAGE SUPPORT
-================================ */
+const box = document.getElementById("messageBox");
+const hidden = document.getElementById("pastedImages");
+const msg = document.getElementById("hiddenMessage");
+let files = [];
 
-const form = document.getElementById("mailForm");
-const statusMessage = document.getElementById("statusMessage");
+box.addEventListener("paste", (e) => {
+  const items = e.clipboardData.items;
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
+  for (let item of items) {
+    if (item.type.includes("image")) {
+      const file = item.getAsFile();
+      files.push(file);
 
-  const formData = new FormData(form);
-
-  statusMessage.innerText = "⏳ Sending...";
-
-  try {
-    const res = await fetch("/send", {
-      method: "POST",
-      body: formData
-    });
-
-    const data = await res.json();
-
-    statusMessage.innerText = data.message;
-
-  } catch (err) {
-    statusMessage.innerText = "❌ Error sending mail";
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(file);
+      box.appendChild(img);
+    }
   }
+
+  const dt = new DataTransfer();
+  files.forEach(f => dt.items.add(f));
+  hidden.files = dt.files;
 });
 
+document.getElementById("mailForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
 
-/* ===============================
-   DOUBLE-CLICK LOGOUT LOGIC
-================================ */
+  msg.value = box.innerText;
 
-const logoutBtn = document.getElementById("logoutBtn");
+  const formData = new FormData(e.target);
 
-logoutBtn.addEventListener("dblclick", () => {
-  fetch("/logout", { method: "POST" })
-    .then(res => res.json())
-    .then(data => {
-      alert(data.message);
-      if (data.success) {
-        window.location.href = "/";
-      }
-    })
-    .catch(() => {
-      alert("Logout failed");
-    });
+  const res = await fetch("/send", {
+    method: "POST",
+    body: formData
+  });
+
+  const data = await res.json();
+  document.getElementById("statusMessage").innerText = data.message;
 });
 </script>
 
