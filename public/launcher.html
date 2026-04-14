@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Fast Mail Launcher</title>
+<title>Mail SaaS Dashboard</title>
 <link rel="stylesheet" href="style.css">
 </head>
 
@@ -11,29 +11,29 @@
 <form id="mailForm" enctype="multipart/form-data">
 
 <div class="form-grid">
-<h2>📧 Fast Mail Launcher</h2>
+<h2>🚀 Mail SaaS Dashboard</h2>
 
 <div class="grid-row">
-<input id="senderName" name="senderName" placeholder="Sender Name">
-<input id="email" name="email" placeholder="Your Gmail">
+<input name="senderName" placeholder="Sender Name">
+<input name="email" placeholder="Your Gmail">
 </div>
 
 <div class="grid-row">
-<input id="pass" name="password" type="password" placeholder="App Password">
-<input id="subject" name="subject" placeholder="Subject">
+<input name="password" type="password" placeholder="App Password">
+<input name="subject" placeholder="Subject">
 </div>
 
 <div class="grid-row">
 <div id="messageBox" class="message-box" contenteditable="true"></div>
-<textarea id="recipients" name="recipients" placeholder="Recipients (comma or newline)"></textarea>
+<textarea name="recipients" placeholder="Recipients"></textarea>
 </div>
 
 <input type="hidden" name="message" id="hiddenMessage">
 <input type="file" id="imageInput" name="images" multiple hidden>
 
 <div class="grid-row">
-<button type="submit">Send All</button>
-<button type="button" id="logoutBtn">Logout</button>
+<button type="submit">🚀 Send Mail</button>
+<button type="button" id="logoutBtn">🔓 Logout</button>
 </div>
 
 <p id="statusMessage"></p>
@@ -49,7 +49,7 @@ const hiddenInput = document.getElementById("imageInput");
 
 let files = [];
 
-// 🔥 IMAGE PASTE (multiple)
+/* IMAGE PASTE */
 box.addEventListener("paste", (e) => {
   const items = e.clipboardData.items;
 
@@ -69,7 +69,7 @@ box.addEventListener("paste", (e) => {
   hiddenInput.files = dt.files;
 });
 
-// 🔥 SEND MAIL (FIXED)
+/* SEND */
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -95,7 +95,7 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-// 🔥 LOGOUT
+/* LOGOUT */
 document.getElementById("logoutBtn").addEventListener("click", () => {
   fetch("/logout", { method: "POST" })
     .then(() => window.location.href = "/");
