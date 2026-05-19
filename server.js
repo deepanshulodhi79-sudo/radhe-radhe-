@@ -403,33 +403,20 @@ app.post(
           to: recipient,
 
           subject:
-            subject || "Quick Update",
+            subject || "Quick Question",
 
           text:
             message || "",
 
           html: `
           <div style="
-            font-family:Arial;
-            padding:20px;
-            line-height:1.6;
+            font-family:Arial,sans-serif;
+            font-size:15px;
+            line-height:1.7;
+            color:#222;
           ">
 
-            <h2>
-              ${subject || "Quick Update"}
-            </h2>
-
-            <div>
-              ${message || ""}
-            </div>
-
-            <hr>
-
-            <small style="color:gray">
-
-              Sent securely using Gmail SMTP
-
-            </small>
+            ${message || ""}
 
           </div>
           `,
