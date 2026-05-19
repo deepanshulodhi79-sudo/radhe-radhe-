@@ -14,7 +14,7 @@ const app = express();
 
 const PORT = process.env.PORT || 8080;
 
-// ================= ENV CONFIG =================
+// ================= CONFIG =================
 
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -32,7 +32,7 @@ app.use(bodyParser.json());
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Rate limiter
+// Rate limit
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -44,7 +44,7 @@ app.use(rateLimit({
 
 // Session
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'change_this_secret',
+  secret: process.env.SESSION_SECRET || 'secret_key',
   resave: false,
   saveUninitialized: false,
   store: sessionStore,
@@ -62,6 +62,7 @@ function delay(ms) {
 }
 
 async function sendSequential(transporter, mails) {
+
   for (const mail of mails) {
 
     await transporter.sendMail(mail);
@@ -79,7 +80,10 @@ async function sendSequential(transporter, mails) {
 // ================= AUTH =================
 
 function requireAuth(req, res, next) {
-  if (req.session.user) return next();
+
+  if (req.session.user) {
+    return next();
+  }
 
   return res.redirect('/');
 }
@@ -88,7 +92,11 @@ function requireAuth(req, res, next) {
 
 // Login page
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+
+  res.sendFile(
+    path.join(__dirname, 'public', 'login.html')
+  );
+
 });
 
 // Login
@@ -106,17 +114,23 @@ app.post('/login', (req, res) => {
     return res.json({
       success: true
     });
+
   }
 
   return res.json({
     success: false,
     message: "Invalid credentials"
   });
+
 });
 
-// Launcher
+// Launcher page
 app.get('/launcher', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
+
+  res.sendFile(
+    path.join(__dirname, 'public', 'launcher.html')
+  );
+
 });
 
 // Logout
@@ -143,34 +157,22 @@ app.post('/send', requireAuth, async (req, res) => {
 
     const {
       senderName,
-      email,
-      password,
       recipients,
       subject,
       message
     } = req.body;
 
-    // Validation
-    if (!email || !password || !recipients) {
+    // Validate recipients
+    if (!recipients) {
 
       return res.json({
         success: false,
-        message: "Email, password and recipients required"
+        message: "Recipients required"
       });
 
     }
 
-    // Sender validation
-    if (!validator.isEmail(email)) {
-
-      return res.json({
-        success: false,
-        message: "Invalid sender email"
-      });
-
-    }
-
-    // Recipient validation
+    // Parse recipients
     const recipientList = recipients
       .split(/[\n,]+/)
       .map(r => r.trim())
@@ -180,33 +182,34 @@ app.post('/send', requireAuth, async (req, res) => {
 
       return res.json({
         success: false,
-        message: "No valid recipients"
+        message: "No valid recipients found"
       });
 
     }
 
     // ================= RATE LIMIT =================
 
+    const smtpUser = process.env.SMTP_USER;
+
     const now = Date.now();
 
     if (
-      !mailLimits[email] ||
-      now - mailLimits[email].startTime >
+      !mailLimits[smtpUser] ||
+      now - mailLimits[smtpUser].startTime >
       60 * 60 * 1000
     ) {
 
-      mailLimits[email] = {
+      mailLimits[smtpUser] = {
         count: 0,
         startTime: now
       };
 
     }
 
-    // Safe daily-ish limit
     const MAX_PER_HOUR = 25;
 
     if (
-      mailLimits[email].count +
+      mailLimits[smtpUser].count +
       recipientList.length >
       MAX_PER_HOUR
     ) {
@@ -215,7 +218,8 @@ app.post('/send', requireAuth, async (req, res) => {
         success: false,
         message:
           `Hourly limit exceeded. Remaining: ${
-            MAX_PER_HOUR - mailLimits[email].count
+            MAX_PER_HOUR -
+            mailLimits[smtpUser].count
           }`
       });
 
@@ -226,7 +230,8 @@ app.post('/send', requireAuth, async (req, res) => {
     const transporter = nodemailer.createTransport({
 
       host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
+
+      port: Number(process.env.SMTP_PORT),
 
       secure: false,
 
@@ -240,11 +245,12 @@ app.post('/send', requireAuth, async (req, res) => {
     // Verify SMTP
     await transporter.verify();
 
-    // ================= MAILS =================
+    // ================= CREATE MAILS =================
 
     const mails = recipientList.map(recipient => ({
 
-      from: `"${senderName || 'Support'}" <${email}>`,
+      from:
+        `"${senderName || 'Support'}" <${process.env.SMTP_USER}>`,
 
       to: recipient,
 
@@ -266,8 +272,7 @@ app.post('/send', requireAuth, async (req, res) => {
         <hr>
 
         <small style="color:gray">
-          You received this email because you subscribed
-          to updates from us.
+          You received this email because you subscribed to updates.
         </small>
 
       </div>
@@ -284,12 +289,12 @@ app.post('/send', requireAuth, async (req, res) => {
 
     await sendSequential(transporter, mails);
 
-    mailLimits[email].count += recipientList.length;
+    mailLimits[smtpUser].count += recipientList.length;
 
     return res.json({
       success: true,
       message:
-        `Sent ${recipientList.length} emails successfully`
+        `✅ Sent ${recipientList.length} email(s)`
     });
 
   } catch (err) {
@@ -305,7 +310,7 @@ app.post('/send', requireAuth, async (req, res) => {
 
 });
 
-// ================= START =================
+// ================= START SERVER =================
 
 app.listen(PORT, () => {
 
