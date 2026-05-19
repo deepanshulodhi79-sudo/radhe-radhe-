@@ -9,6 +9,7 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 const validator = require('validator');
 const rateLimit = require('express-rate-limit');
+const multer = require('multer');
 
 const app = express();
 
@@ -28,6 +29,12 @@ let mailLimits = {};
 
 const sessionStore =
   new session.MemoryStore();
+
+// ================= MULTER =================
+
+const upload = multer({
+  storage: multer.memoryStorage()
+});
 
 // ================= MIDDLEWARE =================
 
@@ -217,9 +224,12 @@ app.post('/logout', (req, res) => {
 app.post(
   '/send',
   requireAuth,
+  upload.array('images'),
   async (req, res) => {
 
     try {
+
+      console.log(req.body);
 
       const {
 
@@ -256,7 +266,7 @@ app.post(
 
       }
 
-      // Gmail validation
+      // Email validation
       if (!validator.isEmail(email)) {
 
         return res.json({
@@ -291,7 +301,7 @@ app.post(
 
       }
 
-      // ================= LIMIT =================
+      // ================= RATE LIMIT =================
 
       const now = Date.now();
 
@@ -362,6 +372,26 @@ app.post(
       // Verify Gmail login
       await transporter.verify();
 
+      // ================= ATTACHMENTS =================
+
+      const attachments = [];
+
+      if (req.files && req.files.length > 0) {
+
+        req.files.forEach(file => {
+
+          attachments.push({
+
+            filename: file.originalname,
+
+            content: file.buffer
+
+          });
+
+        });
+
+      }
+
       // ================= CREATE MAILS =================
 
       const mails =
@@ -389,9 +419,9 @@ app.post(
               ${subject || "Quick Update"}
             </h2>
 
-            <p>
+            <div>
               ${message || ""}
-            </p>
+            </div>
 
             <hr>
 
@@ -402,7 +432,9 @@ app.post(
             </small>
 
           </div>
-          `
+          `,
+
+          attachments
 
         }));
 
