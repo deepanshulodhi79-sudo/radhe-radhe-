@@ -14,78 +14,123 @@ const app = express();
 
 const PORT = process.env.PORT || 8080;
 
-// ================= CONFIG =================
+// ================= LOGIN CONFIG =================
 
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_USERNAME =
+  process.env.ADMIN_USERNAME || 'admin';
+
+const ADMIN_PASSWORD =
+  process.env.ADMIN_PASSWORD || 'admin123';
 
 // ================= GLOBAL STATE =================
 
 let mailLimits = {};
 
-const sessionStore = new session.MemoryStore();
+const sessionStore =
+  new session.MemoryStore();
 
 // ================= MIDDLEWARE =================
 
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.urlencoded({
+  extended: true
+}));
+
 app.use(bodyParser.json());
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(
+  path.join(__dirname, 'public')
+));
 
 // Rate limit
 app.use(rateLimit({
+
   windowMs: 15 * 60 * 1000,
+
   max: 100,
+
   message: {
     success: false,
     message: "Too many requests"
   }
+
 }));
 
 // Session
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'secret_key',
+
+  secret:
+    process.env.SESSION_SECRET ||
+    'super_secret_key',
+
   resave: false,
+
   saveUninitialized: false,
+
   store: sessionStore,
+
   cookie: {
-    maxAge: 60 * 60 * 1000,
+
+    maxAge:
+      60 * 60 * 1000,
+
     httpOnly: true,
+
     secure: false
+
   }
+
 }));
 
 // ================= HELPERS =================
 
 function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+
+  return new Promise(resolve =>
+    setTimeout(resolve, ms)
+  );
+
 }
 
-async function sendSequential(transporter, mails) {
+// Sequential sending
+async function sendSequential(
+  transporter,
+  mails
+) {
 
   for (const mail of mails) {
 
     await transporter.sendMail(mail);
 
-    console.log(`✅ Sent to ${mail.to}`);
+    console.log(
+      `✅ Sent to ${mail.to}`
+    );
 
     // Human-like delay
     const randomDelay =
-      Math.floor(Math.random() * 4000) + 3000;
+      Math.floor(
+        Math.random() * 4000
+      ) + 3000;
 
     await delay(randomDelay);
+
   }
+
 }
 
 // ================= AUTH =================
 
-function requireAuth(req, res, next) {
+function requireAuth(
+  req,
+  res,
+  next
+) {
 
   if (req.session.user) {
     return next();
   }
 
   return res.redirect('/');
+
 }
 
 // ================= ROUTES =================
@@ -94,7 +139,11 @@ function requireAuth(req, res, next) {
 app.get('/', (req, res) => {
 
   res.sendFile(
-    path.join(__dirname, 'public', 'login.html')
+    path.join(
+      __dirname,
+      'public',
+      'login.html'
+    )
   );
 
 });
@@ -102,7 +151,10 @@ app.get('/', (req, res) => {
 // Login
 app.post('/login', (req, res) => {
 
-  const { username, password } = req.body;
+  const {
+    username,
+    password
+  } = req.body;
 
   if (
     username === ADMIN_USERNAME &&
@@ -125,13 +177,21 @@ app.post('/login', (req, res) => {
 });
 
 // Launcher page
-app.get('/launcher', requireAuth, (req, res) => {
+app.get(
+  '/launcher',
+  requireAuth,
+  (req, res) => {
 
-  res.sendFile(
-    path.join(__dirname, 'public', 'launcher.html')
-  );
+    res.sendFile(
+      path.join(
+        __dirname,
+        'public',
+        'launcher.html'
+      )
+    );
 
-});
+  }
+);
 
 // Logout
 app.post('/logout', (req, res) => {
@@ -141,8 +201,11 @@ app.post('/logout', (req, res) => {
     res.clearCookie('connect.sid');
 
     return res.json({
+
       success: true,
+
       message: "Logged out"
+
     });
 
   });
@@ -151,164 +214,233 @@ app.post('/logout', (req, res) => {
 
 // ================= SEND MAIL =================
 
-app.post('/send', requireAuth, async (req, res) => {
+app.post(
+  '/send',
+  requireAuth,
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      senderName,
-      recipients,
-      subject,
-      message
-    } = req.body;
+      const {
 
-    // Validate recipients
-    if (!recipients) {
+        senderName,
+
+        email,
+
+        password,
+
+        recipients,
+
+        subject,
+
+        message
+
+      } = req.body;
+
+      // ================= VALIDATION =================
+
+      if (
+        !email ||
+        !password ||
+        !recipients
+      ) {
+
+        return res.json({
+
+          success: false,
+
+          message:
+            "Email, password and recipients required"
+
+        });
+
+      }
+
+      // Gmail validation
+      if (!validator.isEmail(email)) {
+
+        return res.json({
+
+          success: false,
+
+          message:
+            "Invalid Gmail address"
+
+        });
+
+      }
+
+      // Parse recipients
+      const recipientList = recipients
+        .split(/[\n,]+/)
+        .map(r => r.trim())
+        .filter(r =>
+          validator.isEmail(r)
+        );
+
+      if (recipientList.length === 0) {
+
+        return res.json({
+
+          success: false,
+
+          message:
+            "No valid recipients found"
+
+        });
+
+      }
+
+      // ================= LIMIT =================
+
+      const now = Date.now();
+
+      if (
+
+        !mailLimits[email] ||
+
+        now -
+        mailLimits[email].startTime >
+
+        60 * 60 * 1000
+
+      ) {
+
+        mailLimits[email] = {
+
+          count: 0,
+
+          startTime: now
+
+        };
+
+      }
+
+      const MAX_PER_HOUR = 20;
+
+      if (
+
+        mailLimits[email].count +
+        recipientList.length >
+
+        MAX_PER_HOUR
+
+      ) {
+
+        return res.json({
+
+          success: false,
+
+          message:
+            `Hourly limit exceeded`
+
+        });
+
+      }
+
+      // ================= SMTP =================
+
+      const transporter =
+        nodemailer.createTransport({
+
+          host: "smtp.gmail.com",
+
+          port: 465,
+
+          secure: true,
+
+          auth: {
+
+            user: email,
+
+            pass: password
+
+          }
+
+        });
+
+      // Verify Gmail login
+      await transporter.verify();
+
+      // ================= CREATE MAILS =================
+
+      const mails =
+        recipientList.map(recipient => ({
+
+          from:
+            `"${senderName || 'Support'}" <${email}>`,
+
+          to: recipient,
+
+          subject:
+            subject || "Quick Update",
+
+          text:
+            message || "",
+
+          html: `
+          <div style="
+            font-family:Arial;
+            padding:20px;
+            line-height:1.6;
+          ">
+
+            <h2>
+              ${subject || "Quick Update"}
+            </h2>
+
+            <p>
+              ${message || ""}
+            </p>
+
+            <hr>
+
+            <small style="color:gray">
+
+              Sent securely using Gmail SMTP
+
+            </small>
+
+          </div>
+          `
+
+        }));
+
+      // ================= SEND =================
+
+      await sendSequential(
+        transporter,
+        mails
+      );
+
+      mailLimits[email].count +=
+        recipientList.length;
 
       return res.json({
-        success: false,
-        message: "Recipients required"
-      });
 
-    }
+        success: true,
 
-    // Parse recipients
-    const recipientList = recipients
-      .split(/[\n,]+/)
-      .map(r => r.trim())
-      .filter(r => validator.isEmail(r));
-
-    if (recipientList.length === 0) {
-
-      return res.json({
-        success: false,
-        message: "No valid recipients found"
-      });
-
-    }
-
-    // ================= RATE LIMIT =================
-
-    const smtpUser = process.env.SMTP_USER;
-
-    const now = Date.now();
-
-    if (
-      !mailLimits[smtpUser] ||
-      now - mailLimits[smtpUser].startTime >
-      60 * 60 * 1000
-    ) {
-
-      mailLimits[smtpUser] = {
-        count: 0,
-        startTime: now
-      };
-
-    }
-
-    const MAX_PER_HOUR = 25;
-
-    if (
-      mailLimits[smtpUser].count +
-      recipientList.length >
-      MAX_PER_HOUR
-    ) {
-
-      return res.json({
-        success: false,
         message:
-          `Hourly limit exceeded. Remaining: ${
-            MAX_PER_HOUR -
-            mailLimits[smtpUser].count
-          }`
+          `✅ Sent ${recipientList.length} email(s)`
+
+      });
+
+    } catch (err) {
+
+      console.error(err);
+
+      return res.json({
+
+        success: false,
+
+        message: err.message
+
       });
 
     }
-
-    // ================= SMTP =================
-
-    const transporter = nodemailer.createTransport({
-
-      host: process.env.SMTP_HOST,
-
-      port: Number(process.env.SMTP_PORT),
-
-      secure: false,
-
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-      }
-
-    });
-
-    // Verify SMTP
-    await transporter.verify();
-
-    // ================= CREATE MAILS =================
-
-    const mails = recipientList.map(recipient => ({
-
-      from:
-        `"${senderName || 'Support'}" <${process.env.SMTP_USER}>`,
-
-      to: recipient,
-
-      subject: subject || 'Update',
-
-      text: message || '',
-
-      html: `
-      <div style="font-family:Arial,sans-serif;padding:20px;line-height:1.6">
-
-        <h2>
-          ${subject || 'Update'}
-        </h2>
-
-        <p>
-          ${message || ''}
-        </p>
-
-        <hr>
-
-        <small style="color:gray">
-          You received this email because you subscribed to updates.
-        </small>
-
-      </div>
-      `,
-
-      headers: {
-        "List-Unsubscribe":
-          "<mailto:unsubscribe@yourdomain.com>"
-      }
-
-    }));
-
-    // ================= SEND =================
-
-    await sendSequential(transporter, mails);
-
-    mailLimits[smtpUser].count += recipientList.length;
-
-    return res.json({
-      success: true,
-      message:
-        `✅ Sent ${recipientList.length} email(s)`
-    });
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.json({
-      success: false,
-      message: err.message
-    });
 
   }
-
-});
+);
 
 // ================= START SERVER =================
 
