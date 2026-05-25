@@ -1,92 +1,104 @@
-function logout() {
-  fetch('/logout', { method: 'POST' })
-    .then(() => window.location.href = '/');
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fast Mail Launcher</title>
+<link rel="stylesheet" href="style.css">
 
-document.getElementById('sendBtn')?.addEventListener('click', () => {
-
-  // ❌ senderName hata diya
-  const email = document.getElementById('email').value.trim();
-
-  const password = document.getElementById('pass').value.trim();
-
-  const subject = document.getElementById('subject').value;
-
-  const message = document.getElementById('message').value;
-
-  const recipients =
-    document.getElementById('recipients').value.trim();
-
-  const status =
-    document.getElementById('statusMessage');
-
-  if (!email || !password || !recipients) {
-
-    status.innerText =
-      '❌ Email, password and recipients required';
-
-    alert(
-      '❌ Email, password and recipients required'
-    );
-
-    return;
+<style>
+  .logout-hint {
+    font-size: 12px;
+    color: #888;
+    margin-top: 4px;
   }
+</style>
+</head>
 
-  const btn =
-    document.getElementById('sendBtn');
+<body>
 
-  btn.disabled = true;
+<div class="form-grid">
 
-  btn.innerText = '⏳ Sending...';
+  <h2>📧 Fast Mail Launcher</h2>
 
-  fetch('/send', {
+  <!-- ✅ ONLY EMAIL -->
+  <div class="grid-row">
+    <input id="email" placeholder="Your Gmail">
+  </div>
 
-    method: 'POST',
+  <div class="grid-row">
+    <input id="pass" type="password" placeholder="App Password">
+    <input id="subject" placeholder="Subject">
+  </div>
 
-    headers: {
-      'Content-Type': 'application/json'
-    },
+  <div class="grid-row">
+    <textarea id="message" placeholder="Message Body"></textarea>
 
-    // ❌ senderName remove
-    body: JSON.stringify({
+    <textarea
+      id="recipients"
+      placeholder="Recipients (comma or newline)"
+    ></textarea>
+  </div>
 
-      email,
-      password,
-      subject,
-      message,
-      recipients
-    })
+  <div class="grid-row">
+
+    <button id="sendBtn">
+      Send All
+    </button>
+
+    <!-- 🔓 DOUBLE CLICK LOGOUT -->
+    <div>
+
+      <button
+        id="logoutBtn"
+        title="Double click to logout"
+      >
+        Logout
+      </button>
+
+      <div class="logout-hint">
+        Double-click to logout
+      </div>
+
+    </div>
+
+  </div>
+
+  <p id="statusMessage"></p>
+
+</div>
+
+<script src="script.js"></script>
+
+<script>
+
+const logoutBtn =
+  document.getElementById("logoutBtn");
+
+logoutBtn.addEventListener("dblclick", () => {
+
+  fetch("/logout", {
+    method: "POST"
   })
 
-  .then(r => r.json())
+  .then(res => res.json())
 
   .then(data => {
 
-    status.innerText = data.message;
+    alert(data.message);
 
     if (data.success) {
 
-      alert('✅ Mail sent successfully!');
-
-    } else {
-
-      alert('❌ Failed: ' + data.message);
+      window.location.href = "/";
     }
-
-    btn.disabled = false;
-
-    btn.innerText = 'Send All';
   })
 
-  .catch(err => {
+  .catch(() => {
 
-    status.innerText =
-      '❌ Error: ' + err.message;
-
-    alert('❌ Error: ' + err.message);
-
-    btn.disabled = false;
-
-    btn.innerText = 'Send All';
+    alert("Logout failed");
   });
 });
+
+</script>
+
+</body>
+</html>
