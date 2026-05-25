@@ -175,13 +175,6 @@ async function sendBatch(
   }
 }
 
-// ✅ AUTO NAME FROM EMAIL
-
-function getSenderName(email) {
-
-  return email.split('@')[0] || "Anonymous";
-}
-
 // ================= SEND MAIL =================
 
 app.post('/send', requireAuth, async (req, res) => {
@@ -267,9 +260,8 @@ app.post('/send', requireAuth, async (req, res) => {
     // Mail array
     const mails = recipientList.map(r => ({
 
-      // ✅ AUTO NAME HERE
-      from:
-        `"${getSenderName(email)}" <${email}>`,
+      // ✅ ONLY EMAIL SHOW
+      from: email,
 
       to: r,
 
