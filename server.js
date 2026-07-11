@@ -49,28 +49,61 @@ app.post('/logout', (req, res) => {
 
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
+
   if (!gmailId || !appPassword || !to)
     return res.status(400).json({ success: false, message: 'Missing fields' });
+
+  // "to" ab single email, array, ya comma/newline separated string — sab chalega
+  let recipients = Array.isArray(to)
+    ? to
+    : String(to).split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+
+  if (recipients.length === 0)
+    return res.status(400).json({ success: false, message: 'No valid recipients' });
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: gmailId, pass: appPassword }
   });
 
-  try {
-    await transporter.sendMail({
-      from: senderName ? `"${senderName}" <${gmailId}>` : `"${gmailId}" <${gmailId}>`,
-      to,
-      subject,
-      text: messageBody
-      // HTML nahi — plain text = personal email = Primary inbox
-      // Koi bulk/newsletter headers nahi
+  const BATCH_SIZE = 5;
+  const results = { sent: [], failed: [] };
+
+  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+    const batch = recipients.slice(i, i + BATCH_SIZE);
+
+    // ek batch ke 5 mails ek sath (parallel) bhejo
+    const batchResults = await Promise.allSettled(
+      batch.map(recipient =>
+        transporter.sendMail({
+          from: senderName ? `"${senderName}" <${gmailId}>` : `"${gmailId}" <${gmailId}>`,
+          to: recipient,
+          subject,
+          text: messageBody
+          // HTML nahi — plain text = personal email = Primary inbox
+          // Koi bulk/newsletter headers nahi
+        }).then(() => recipient)
+      )
+    );
+
+    batchResults.forEach((r, idx) => {
+      const recipient = batch[idx];
+      if (r.status === 'fulfilled') {
+        results.sent.push(recipient);
+        console.log(`✅ Sent: ${recipient}`);
+      } else {
+        results.failed.push({ to: recipient, error: r.reason?.message || 'Unknown error' });
+        console.error(`❌ ${recipient}:`, r.reason?.message);
+      }
     });
-    res.json({ success: true });
-  } catch (err) {
-    console.error(`❌ ${to}:`, err.message);
-    res.status(500).json({ success: false, message: err.message });
   }
+
+  res.json({
+    success: results.failed.length === 0,
+    totalSent: results.sent.length,
+    totalFailed: results.failed.length,
+    results
+  });
 });
 
 app.listen(PORT, () => console.log(`🚀 Fast Mailer on port ${PORT}`));
