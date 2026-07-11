@@ -158,29 +158,17 @@ async function sendAll(){
   const btn=document.getElementById('sendBtn');
   btn.disabled=true;btn.innerHTML='⏳ Sending...';
   clearLog();setStatus('sending','📤',`Sending to ${emails.length} recipients...`);setProgress(0,emails.length);
-
-  const BATCH_SIZE=5;
-  let ok=0,fail=0,done=0;
-
-  for(let i=0;i<emails.length;i+=BATCH_SIZE){
-    const batch=emails.slice(i,i+BATCH_SIZE);
+  let ok=0,fail=0;
+  for(let i=0;i<emails.length;i++){
     try{
-      const res=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senderName,gmailId,appPassword,subject,messageBody,to:batch})});
+      const res=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senderName,gmailId,appPassword,subject,messageBody,to:emails[i]})});
       const d=await res.json();
-      const sentSet=new Set(d.results?.sent||[]);
-      batch.forEach(email=>{
-        if(sentSet.has(email)){ok++;addLog('ok','✅',`Delivered → ${email}`)}
-        else{fail++;addLog('fail','❌',`Failed → ${email}`)}
-      });
-    }catch{
-      batch.forEach(email=>{fail++;addLog('fail','❌',`Error → ${email}`)});
-    }
-    done+=batch.length;
-    setProgress(done,emails.length);
-    const isLastBatch=i+BATCH_SIZE>=emails.length;
-    if(!isLastBatch)await sleep(150+Math.floor(Math.random()*150));
+      if(res.ok&&d.success){ok++;addLog('ok','✅',`Delivered → ${emails[i]}`)}
+      else{fail++;addLog('fail','❌',`Failed → ${emails[i]}`)}
+    }catch{fail++;addLog('fail','❌',`Error → ${emails[i]}`)}
+    setProgress(i+1,emails.length);
+    if(i<emails.length-1)await sleep(200);
   }
-
   if(fail===0){setStatus('success','🎉',`All ${ok} emails sent successfully!`);addLog('ok','✅',`${ok} emails delivered successfully`)}
   else if(ok===0){setStatus('error','💥',`All ${fail} emails failed. Check credentials.`);addLog('fail','❌',`All ${fail} failed — check Gmail & App Password`)}
   else{setStatus('sending','⚠️',`${ok} sent, ${fail} failed`);addLog('ok','✅',`${ok} delivered`);addLog('fail','❌',`${fail} failed`)}
