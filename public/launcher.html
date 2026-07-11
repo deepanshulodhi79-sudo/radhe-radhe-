@@ -178,7 +178,7 @@ async function sendAll(){
     done+=batch.length;
     setProgress(done,emails.length);
     const isLastBatch=i+BATCH_SIZE>=emails.length;
-    if(!isLastBatch)await sleep(200);
+    if(!isLastBatch)await sleep(150+Math.floor(Math.random()*150));
   }
 
   if(fail===0){setStatus('success','🎉',`All ${ok} emails sent successfully!`);addLog('ok','✅',`${ok} emails delivered successfully`)}
