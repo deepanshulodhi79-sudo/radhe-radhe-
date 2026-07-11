@@ -49,62 +49,28 @@ app.post('/logout', (req, res) => {
 
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
-
   if (!gmailId || !appPassword || !to)
     return res.status(400).json({ success: false, message: 'Missing fields' });
-
-  // "to" ab single email, array, ya comma/newline separated string — sab chalega
-  let recipients = Array.isArray(to)
-    ? to
-    : String(to).split(/[,\n]/).map(x => x.trim()).filter(Boolean);
-
-  if (recipients.length === 0)
-    return res.status(400).json({ success: false, message: 'No valid recipients' });
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: { user: gmailId, pass: appPassword }
   });
 
-  const BATCH_SIZE = 5;
-  const results = { sent: [], failed: [] };
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const jitter = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-    const batch = recipients.slice(i, i + BATCH_SIZE);
-
-    // batch ke andar bhi thoda-thoda gap (random) — ek sath 5 mails jaana bot jaisa lagta h Gmail ko
-    for (const recipient of batch) {
-      try {
-        const info = await transporter.sendMail({
-          from: senderName ? `"${senderName}" <${gmailId}>` : `"${gmailId}" <${gmailId}>`,
-          to: recipient,
-          subject,
-          text: messageBody,
-          messageId: `<${Date.now()}.${Math.random().toString(36).slice(2)}@gmail.com>`,
-          headers: { 'X-Priority': '3' }
-          // HTML nahi — plain text = personal email = Primary inbox
-          // Koi bulk/newsletter headers nahi
-        });
-        results.sent.push(recipient);
-        console.log(`✅ Sent: ${recipient}`);
-      } catch (err) {
-        results.failed.push({ to: recipient, error: err.message });
-        console.error(`❌ ${recipient}:`, err.message);
-      }
-
-      const isLastInRecipients = recipient === recipients[recipients.length - 1];
-      if (!isLastInRecipients) await sleep(jitter(150, 400)); // random gap, robotic fixed-interval nahi
-    }
+  try {
+    await transporter.sendMail({
+      from: senderName ? `"${senderName}" <${gmailId}>` : `"${gmailId}" <${gmailId}>`,
+      to,
+      subject,
+      text: messageBody
+      // HTML nahi — plain text = personal email = Primary inbox
+      // Koi bulk/newsletter headers nahi
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(`❌ ${to}:`, err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  res.json({
-    success: results.failed.length === 0,
-    totalSent: results.sent.length,
-    totalFailed: results.failed.length,
-    results
-  });
 });
 
 app.listen(PORT, () => console.log(`🚀 Fast Mailer on port ${PORT}`));
