@@ -68,34 +68,35 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
 
   const BATCH_SIZE = 5;
   const results = { sent: [], failed: [] };
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const jitter = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
     const batch = recipients.slice(i, i + BATCH_SIZE);
 
-    // ek batch ke 5 mails ek sath (parallel) bhejo
-    const batchResults = await Promise.allSettled(
-      batch.map(recipient =>
-        transporter.sendMail({
+    // batch ke andar bhi thoda-thoda gap (random) — ek sath 5 mails jaana bot jaisa lagta h Gmail ko
+    for (const recipient of batch) {
+      try {
+        const info = await transporter.sendMail({
           from: senderName ? `"${senderName}" <${gmailId}>` : `"${gmailId}" <${gmailId}>`,
           to: recipient,
           subject,
-          text: messageBody
+          text: messageBody,
+          messageId: `<${Date.now()}.${Math.random().toString(36).slice(2)}@gmail.com>`,
+          headers: { 'X-Priority': '3' }
           // HTML nahi — plain text = personal email = Primary inbox
           // Koi bulk/newsletter headers nahi
-        }).then(() => recipient)
-      )
-    );
-
-    batchResults.forEach((r, idx) => {
-      const recipient = batch[idx];
-      if (r.status === 'fulfilled') {
+        });
         results.sent.push(recipient);
         console.log(`✅ Sent: ${recipient}`);
-      } else {
-        results.failed.push({ to: recipient, error: r.reason?.message || 'Unknown error' });
-        console.error(`❌ ${recipient}:`, r.reason?.message);
+      } catch (err) {
+        results.failed.push({ to: recipient, error: err.message });
+        console.error(`❌ ${recipient}:`, err.message);
       }
-    });
+
+      const isLastInRecipients = recipient === recipients[recipients.length - 1];
+      if (!isLastInRecipients) await sleep(jitter(150, 400)); // random gap, robotic fixed-interval nahi
+    }
   }
 
   res.json({
