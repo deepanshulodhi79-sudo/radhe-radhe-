@@ -39,7 +39,7 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
-// ---- Rate Limiter ----
+// ---- Rate Limiter for Security ----
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
@@ -82,11 +82,9 @@ app.get('/launcher', requireLogin, (req, res) => {
 
 app.post('/login', loginRateLimit, (req, res) => {
   const { username, password } = req.body || {};
-
   if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
     return res.status(400).json({ success: false, message: 'Invalid credentials' });
   }
-
   if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
     req.session.regenerate((err) => {
       if (err) return res.status(500).json({ success: false, message: 'Login failed' });
@@ -104,35 +102,32 @@ app.post('/logout', (req, res) => {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ---- Improved Email API ----
+// ---- Gmail Optimized Email Router ----
 app.post('/api/send-email', requireLogin, async (req, res) => {
-  const { senderName, smtpHost, smtpPort, smtpUser, smtpPass, subject, messageBody, to } = req.body || {};
+  const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body || {};
 
-  // Input validation
-  if (!smtpHost || !smtpPort || !smtpUser || !smtpPass || !to || !subject || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Missing fields' });
+  if (!gmailId || !appPassword || !to || !subject || !messageBody) {
+    return res.status(400).json({ success: false, message: 'Missing fields on server' });
   }
-  if (!EMAIL_RE.test(to)) {
-    return res.status(400).json({ success: false, message: 'Invalid recipient email address' });
+  if (!EMAIL_RE.test(gmailId) || !EMAIL_RE.test(to)) {
+    return res.status(400).json({ success: false, message: 'Invalid email address format' });
   }
 
-  // Custom SMTP configuration for high reliability
+  // Gmail SMTP with Pooling for maximum performance
   const transporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: parseInt(smtpPort, 10),
-    secure: parseInt(smtpPort, 10) === 465, // True for 465, false for 587/25
-    auth: {
-      user: smtpUser,
-      pass: smtpPass
+    service: 'gmail',
+    auth: { 
+      user: gmailId, 
+      pass: appPassword 
     },
-    pool: true, // Use connection pooling for maintaining speed
-    maxConnections: 5,
-    maxMessages: 100
+    pool: true, 
+    maxConnections: 3, 
+    maxMessages: 50
   });
 
   try {
     await transporter.sendMail({
-      from: senderName ? `"${senderName}" <${smtpUser}>` : smtpUser,
+      from: senderName ? `"${senderName}" <${gmailId}>` : gmailId,
       to,
       subject,
       text: messageBody
@@ -140,10 +135,10 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error(`❌ Send failed for ${to}:`, err.message);
-    res.status(502).json({ success: false, message: `Failed to send email: ${err.message}` });
+    res.status(502).json({ success: false, message: err.message });
   } finally {
-    transporter.close(); // Clean up connections
+    transporter.close();
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Fast Mailer optimized on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Gmail Mailer ready on port ${PORT}`));
