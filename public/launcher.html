@@ -80,15 +80,13 @@ textarea#recipients{min-height:145px;font-size:13px}
 
 <div class="main-grid">
   <div class="card">
-    <div class="card-title">⚙️ SMTP Server Config</div>
+    <div class="card-title">⚙️ Sender Config</div>
     <div class="field"><label>Sender Name</label><input id="senderName" type="text" placeholder="e.g. Rahul Sharma" autocomplete="off"></div>
-    <div class="field"><label>SMTP Host</label><input id="smtpHost" type="text" placeholder="e.g. smtp.brevo.com ya smtp.gmail.com" autocomplete="off"></div>
-    <div class="field"><label>SMTP Port</label><input id="smtpPort" type="number" placeholder="e.g. 465 ya 587" autocomplete="off"></div>
-    <div class="field"><label>SMTP Username / Email</label><input id="smtpUser" type="text" placeholder="Aapka account login email" autocomplete="off"></div>
+    <div class="field"><label>Gmail ID</label><input id="gmailId" type="email" placeholder="you@gmail.com" autocomplete="off"></div>
     <div class="field">
-      <label>SMTP Password / App Pass</label>
+      <label>App Password</label>
       <div class="pass-wrap">
-        <input id="smtpPass" type="password" placeholder="Aapka SMTP password" autocomplete="new-password">
+        <input id="appPassword" type="password" placeholder="Google App Password" autocomplete="new-password">
         <button class="toggle-pass" onclick="togglePass()" type="button">👁</button>
       </div>
     </div>
@@ -106,11 +104,11 @@ textarea#recipients{min-height:145px;font-size:13px}
       <textarea id="recipients" placeholder="Paste emails here:&#10;&#10;alice@gmail.com&#10;bob@yahoo.com, carol@outlook.com" oninput="countRecipients()"></textarea>
     </div>
     <div class="tips">
-      <strong>📋 Tips for Inbox Delivery</strong>
+      <strong>📋 Tips</strong>
       Separate by comma or new line<br>
       Max <b>50 recipients</b> per batch<br>
-      For high delivery, use providers like <b>Brevo, Resend, or Mailgun</b>.<br>
-      Ensure your custom domain has verified <b>SPF & DKIM</b> records.
+      Use Gmail <b>App Password</b> — not your login password<br>
+      Enable <b>2FA</b> on Gmail → then generate App Password
     </div>
   </div>
 </div>
@@ -145,7 +143,7 @@ function escapeHtml(str){
 
 function parseEmails(raw){return raw.split(/[\n,]+/).map(e=>e.trim().toLowerCase()).filter(e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))}
 function countRecipients(){const e=parseEmails(document.getElementById('recipients').value),b=document.getElementById('recipientCount');b.textContent=`${e.length} recipient${e.length!==1?'s':''}`;b.style.background=e.length>50?'#e53e3e':'#667eea'}
-function togglePass(){const i=document.getElementById('smtpPass');i.type=i.type==='password'?'text':'password'}
+function togglePass(){const i=document.getElementById('appPassword');i.type=i.type==='password'?'text':'password'}
 function setStatus(t,icon,text){const b=document.getElementById('statusBar');b.className='status-bar '+t;document.getElementById('statusIcon').textContent=icon;document.getElementById('statusText').textContent=text}
 
 function addLog(t,icon,msg){
@@ -163,29 +161,19 @@ function setProgress(cur,tot){const w=document.getElementById('progressWrap');w.
 function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
 
 function validate(){
-  const fields=[
-    {id:'senderName',label:'Sender Name'},
-    {id:'smtpHost',label:'SMTP Host'},
-    {id:'smtpPort',label:'SMTP Port'},
-    {id:'smtpUser',label:'SMTP Username'},
-    {id:'smtpPass',label:'SMTP Password'},
-    {id:'subject',label:'Subject'},
-    {id:'messageBody',label:'Message Body'}
-  ];
+  const fields=[{id:'senderName',label:'Sender Name'},{id:'gmailId',label:'Gmail ID'},{id:'appPassword',label:'App Password'},{id:'subject',label:'Subject'},{id:'messageBody',label:'Message Body'}];
   for(const f of fields){if(!document.getElementById(f.id).value.trim()){setStatus('error','❌',`${f.label} is required`);document.getElementById(f.id).focus();return false}}
   const emails=parseEmails(document.getElementById('recipients').value);
   if(emails.length===0){setStatus('error','❌','Add at least 1 valid recipient email');return false}
   if(emails.length>50){setStatus('error','❌','Max 50 recipients per batch');return false}
-  return emails;
+  return emails
 }
 
 async function sendAll(){
   const emails=validate();if(!emails)return;
   const senderName=document.getElementById('senderName').value.trim();
-  const smtpHost=document.getElementById('smtpHost').value.trim();
-  const smtpPort=document.getElementById('smtpPort').value.trim();
-  const smtpUser=document.getElementById('smtpUser').value.trim();
-  const smtpPass=document.getElementById('smtpPass').value.trim();
+  const gmailId=document.getElementById('gmailId').value.trim();
+  const appPassword=document.getElementById('appPassword').value.trim();
   const subject=document.getElementById('subject').value.trim();
   const messageBody=document.getElementById('messageBody').value.trim();
   const btn=document.getElementById('sendBtn');
@@ -195,6 +183,7 @@ async function sendAll(){
 
   let ok=0,fail=0;
 
+  // 6-6 ke batches me parallel bhejenge bina crash kiye
   for(let i=0; i<emails.length; i+=6){
     const chunk = emails.slice(i, i+6);
 
@@ -203,31 +192,33 @@ async function sendAll(){
         const res=await fetch('/api/send-email',{
           method:'POST',
           headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({senderName,smtpHost,smtpPort,smtpUser,smtpPass,subject,messageBody,to:email})
+          body:JSON.stringify({senderName,gmailId,appPassword,subject,messageBody,to:email})
         });
         const d=await res.json();
         if(res.ok&&d.success){ok++;addLog('ok','✅',`Delivered → ${email}`)}
-        else{fail++;addLog('fail','❌',`Failed → ${email} (${d.message || 'Unknown Error'})`)}
+        else{fail++;addLog('fail','❌',`Failed → ${email} (${d.message || 'Status Error'})`)}
       }catch{fail++;addLog('fail','❌',`Error → ${email}`)}
     });
 
     await Promise.all(promises);
     setProgress(Math.min(i + chunk.length, emails.length), emails.length);
 
-    if(i + 6 < emails.length) await sleep(500);
+    // Speed maintain karne aur inbox delivery badhane ke liye 800ms ka delay
+    if(i + 6 < emails.length) await sleep(800);
   }
 
   if(fail===0){setStatus('success','🎉',`All ${ok} emails sent successfully!`);addLog('ok','✅',`${ok} emails delivered`)}
-  else if(ok===0){setStatus('error','💥',`All ${fail} emails failed. Check SMTP Config.`);addLog('fail','❌',`All failed — check SMTP logs`)}
+  else if(ok===0){setStatus('error','💥',`All ${fail} emails failed. Check Gmail credentials.`);addLog('fail','❌',`All failed — check Gmail ID & App Password`)}
   else{setStatus('sending','⚠️',`${ok} sent, ${fail} failed`);addLog('ok','✅',`${ok} delivered`);addLog('fail','❌',`${fail} failed`)}
   addLog('info','📊',`Total: ${emails.length}  ·  ✅ ${ok} success  ·  ❌ ${fail} failed`);
   btn.disabled=false;btn.innerHTML='🚀 Send All Emails';
 }
 
 function clearAll(){
-  ['senderName','smtpHost','smtpPort','smtpUser','smtpPass','subject','messageBody','recipients'].forEach(id=>document.getElementById(id).value='');
+  ['senderName','gmailId','appPassword','subject','messageBody','recipients'].forEach(id=>document.getElementById(id).value='');
   countRecipients();clearLog();document.getElementById('progressWrap').style.display='none';setStatus('','⚡','Ready to launch');
 }
+
 document.getElementById('logoutBtn').addEventListener('click',async()=>{
   if(!confirm('Logout karna chahte hain?'))return;
   await fetch('/logout',{method:'POST'});window.location.href='/';
