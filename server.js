@@ -8,18 +8,16 @@ require('dotenv').config();
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ---- Required env vars (no hardcoded fallback credentials) ----
 const REQUIRED_ENV = ['SESSION_SECRET', 'ADMIN_USER', 'ADMIN_PASS'];
 const missing = REQUIRED_ENV.filter(k => !process.env[k]);
 if (missing.length) {
   console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-  console.error('   Set these in your .env file before starting the server.');
   process.exit(1);
 }
 
-app.set('trust proxy', 1); // needed if behind a reverse proxy (Heroku, Nginx, etc.) for secure cookies
+app.set('trust proxy', 1);
 
-app.use(bodyParser.json({ limit: '200kb' }));           // prevent oversized payload abuse
+app.use(bodyParser.json({ limit: '200kb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '200kb' }));
 
 app.use(session({
@@ -28,7 +26,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // requires HTTPS in production
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 1000 * 60 * 60 * 8
   }
@@ -41,9 +39,9 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
-// ---- Simple in-memory rate limiter for login (no extra dependency) ----
-const loginAttempts = new Map(); // ip -> { count, firstAttempt }
-const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 min
+// ---- Rate Limiter ----
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
 
 function loginRateLimit(req, res, next) {
@@ -66,7 +64,6 @@ function loginRateLimit(req, res, next) {
   next();
 }
 
-// periodic cleanup so the map doesn't grow forever
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of loginAttempts.entries()) {
@@ -90,19 +87,14 @@ app.post('/login', loginRateLimit, (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid credentials' });
   }
 
-  const validUser = process.env.ADMIN_USER;
-  const validPass = process.env.ADMIN_PASS;
-
-  if (username === validUser && password === validPass) {
-    req.session.regenerate((err) => { // regenerate session id on login to prevent session fixation
+  if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
+    req.session.regenerate((err) => {
       if (err) return res.status(500).json({ success: false, message: 'Login failed' });
       req.session.loggedIn = true;
       return res.json({ success: true });
     });
     return;
   }
-
-  // Generic message — don't reveal whether username or password was wrong
   res.status(401).json({ success: false, message: 'Invalid credentials' });
 });
 
@@ -112,34 +104,46 @@ app.post('/logout', (req, res) => {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// ---- Improved Email API ----
 app.post('/api/send-email', requireLogin, async (req, res) => {
-  const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body || {};
+  const { senderName, smtpHost, smtpPort, smtpUser, smtpPass, subject, messageBody, to } = req.body || {};
 
-  if (!gmailId || !appPassword || !to || !subject || !messageBody) {
+  // Input validation
+  if (!smtpHost || !smtpPort || !smtpUser || !smtpPass || !to || !subject || !messageBody) {
     return res.status(400).json({ success: false, message: 'Missing fields' });
   }
-  if (!EMAIL_RE.test(gmailId) || !EMAIL_RE.test(to)) {
-    return res.status(400).json({ success: false, message: 'Invalid email address' });
+  if (!EMAIL_RE.test(to)) {
+    return res.status(400).json({ success: false, message: 'Invalid recipient email address' });
   }
 
+  // Custom SMTP configuration for high reliability
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: gmailId, pass: appPassword }
+    host: smtpHost,
+    port: parseInt(smtpPort, 10),
+    secure: parseInt(smtpPort, 10) === 465, // True for 465, false for 587/25
+    auth: {
+      user: smtpUser,
+      pass: smtpPass
+    },
+    pool: true, // Use connection pooling for maintaining speed
+    maxConnections: 5,
+    maxMessages: 100
   });
 
   try {
     await transporter.sendMail({
-      from: senderName ? `"${senderName}" <${gmailId}>` : `"${gmailId}" <${gmailId}>`,
+      from: senderName ? `"${senderName}" <${smtpUser}>` : smtpUser,
       to,
       subject,
       text: messageBody
     });
     res.json({ success: true });
   } catch (err) {
-    // Log full detail server-side only; don't leak internals to the client
-    console.error(`❌ send failed for ${to}:`, err.message);
-    res.status(502).json({ success: false, message: 'Failed to send email' });
+    console.error(`❌ Send failed for ${to}:`, err.message);
+    res.status(502).json({ success: false, message: `Failed to send email: ${err.message}` });
+  } finally {
+    transporter.close(); // Clean up connections
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Fast Mailer on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Fast Mailer optimized on port ${PORT}`));
