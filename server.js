@@ -31,6 +31,7 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
+// Routes
 app.get('/', (req, res) => {
   if (req.session?.loggedIn) return res.redirect('/launcher');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -63,37 +64,44 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
+// Email Sending Route
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
-  if (!gmailId || !appPassword || !to) {
-    return res.status(400).json({ success: false, message: 'Missing fields' });
+  if (!gmailId || !appPassword || !to || !messageBody) {
+    return res.status(400).json({ success: false, message: 'Required fields missing' });
   }
 
+  // App Password se space remove karna
   const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
+  const cleanGmail = gmailId.trim();
 
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
-      user: gmailId.trim(),
+      user: cleanGmail,
       pass: cleanAppPass
     }
   });
 
   try {
-    const cleanSenderName = senderName ? senderName.trim() : '';
-    const fromHeader = cleanSenderName ? `"${cleanSenderName}" <${gmailId.trim()}>` : `"${gmailId.trim()}" <${gmailId.trim()}>`;
+    const cleanSender = senderName ? senderName.trim() : '';
+    const fromHeader = cleanSender ? `"${cleanSender}" <${cleanGmail}>` : cleanGmail;
 
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject || '',
-      text: messageBody
+      subject: subject ? subject.trim() : 'Notification',
+      text: messageBody.trim(),
+      replyTo: cleanGmail
     });
 
+    console.log(`✅ Email sent to ${to}`);
     res.json({ success: true });
   } catch (err) {
-    console.error(`❌ ${to}:`, err.message);
+    console.error(`❌ Mail Error:`, err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
