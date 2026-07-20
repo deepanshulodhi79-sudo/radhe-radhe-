@@ -67,7 +67,6 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// Direct Working Gmail Transporter
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
@@ -79,7 +78,6 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid email address format' });
   }
 
-  // Clean App Password (spaces remove kar do)
   const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
 
   const transporter = nodemailer.createTransport({
@@ -94,14 +92,21 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
 
   try {
     const cleanSenderName = senderName ? senderName.trim() : '';
-    const fromHeader = cleanSenderName ? `"${cleanSenderName}" <${gmailId.trim()}>` : gmailId.trim();
+    const senderEmail = gmailId.trim();
+    const fromHeader = cleanSenderName ? `"${cleanSenderName}" <${senderEmail}>` : senderEmail;
 
+    // Direct human-like email layout
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject ? subject.trim() : 'Update',
+      subject: subject ? subject.trim() : 'Quick Update',
       text: messageBody.trim(),
-      replyTo: gmailId.trim()
+      replyTo: senderEmail,
+      headers: {
+        'X-Mailer': 'Apple Mail (2.3654.120.0.1)', // Popular email client spoofing header
+        'Message-ID': `<${Date.now()}.${Math.random().toString(36).substring(2, 9)}@gmail.com>`,
+        'Date': new Date().toUTCString()
+      }
     });
 
     console.log(`✅ Mail sent successfully to ${to}`);
