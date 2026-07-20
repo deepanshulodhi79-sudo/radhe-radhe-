@@ -1,7 +1,7 @@
 const express    = require('express');
 const session    = require('express-session');
 const bodyParser = require('body-parser');
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 const path       = require('path');
 require('dotenv').config();
 
@@ -31,7 +31,6 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
-// 1. Pages Routes
 app.get('/', (req, res) => {
   if (req.session?.loggedIn) return res.redirect('/launcher');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -41,7 +40,6 @@ app.get('/launcher', requireLogin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// 2. Auth Routes
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const validUser = process.env.ADMIN_USER || 'admin';
@@ -65,43 +63,51 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-// 3. Email Sending API Route (YEH RAHA WOH ROUTE)
-app.post('/api/send-email', requireLogin, async (req, res) => {
-  const { senderName, gmailId, replyToEmail, subject, messageBody, to, apiKey } = req.body;
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
 
-  if (!to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Missing "to" or "messageBody" fields' });
+// Direct Working Gmail Transporter
+app.post('/api/send-email', requireLogin, async (req, res) => {
+  const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
+
+  if (!gmailId || !appPassword || !to || !messageBody) {
+    return res.status(400).json({ success: false, message: 'Missing required fields' });
   }
 
-  const keyToUse = apiKey || process.env.RESEND_API_KEY || 're_TQbJGbXz_5pWRgdxukArrVu3iLTXKGkxs';
-  const resend = new Resend(keyToUse.trim());
+  if (!isValidEmail(to) || !isValidEmail(gmailId)) {
+    return res.status(400).json({ success: false, message: 'Invalid email address format' });
+  }
 
-  // Direct Reply address setup
-  const myReplyAddress = replyToEmail || gmailId;
+  // Clean App Password (spaces remove kar do)
+  const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
+
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+      user: gmailId.trim(),
+      pass: cleanAppPass
+    }
+  });
 
   try {
-    const emailPayload = {
-      from: 'onboarding@resend.dev',
-      to: [to.trim()],
-      subject: subject || 'Quick Update',
-      text: messageBody
-    };
+    const cleanSenderName = senderName ? senderName.trim() : '';
+    const fromHeader = cleanSenderName ? `"${cleanSenderName}" <${gmailId.trim()}>` : gmailId.trim();
 
-    if (myReplyAddress) {
-      emailPayload.reply_to = myReplyAddress.trim();
-    }
+    await transporter.sendMail({
+      from: fromHeader,
+      to: to.trim(),
+      subject: subject ? subject.trim() : 'Update',
+      text: messageBody.trim(),
+      replyTo: gmailId.trim()
+    });
 
-    const { data, error } = await resend.emails.send(emailPayload);
-
-    if (error) {
-      console.error(`❌ Resend Error:`, error);
-      return res.status(400).json({ success: false, message: error.message });
-    }
-
-    console.log(`✅ Mail sent successfully to ${to}, ID:`, data.id);
-    res.json({ success: true, data });
+    console.log(`✅ Mail sent successfully to ${to}`);
+    res.json({ success: true });
   } catch (err) {
-    console.error(`❌ Server Exception:`, err.message);
+    console.error(`❌ Error sending to ${to}:`, err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
