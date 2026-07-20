@@ -31,6 +31,7 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
+// 1. Pages Routes
 app.get('/', (req, res) => {
   if (req.session?.loggedIn) return res.redirect('/launcher');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -40,6 +41,7 @@ app.get('/launcher', requireLogin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
+// 2. Auth Routes
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const validUser = process.env.ADMIN_USER || 'admin';
@@ -63,29 +65,43 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
+// 3. Email Sending API Route (YEH RAHA WOH ROUTE)
 app.post('/api/send-email', requireLogin, async (req, res) => {
-  const { senderName, subject, messageBody, to, apiKey } = req.body;
+  const { senderName, gmailId, replyToEmail, subject, messageBody, to, apiKey } = req.body;
 
   if (!to || !messageBody) {
     return res.status(400).json({ success: false, message: 'Missing "to" or "messageBody" fields' });
   }
 
-  // Frontend se key aaye toh wahi use karo, warna default backend key use hogi
   const keyToUse = apiKey || process.env.RESEND_API_KEY || 're_TQbJGbXz_5pWRgdxukArrVu3iLTXKGkxs';
   const resend = new Resend(keyToUse.trim());
 
+  // Direct Reply address setup
+  const myReplyAddress = replyToEmail || gmailId;
+
   try {
-    const data = await resend.emails.send({
-      from: `${senderName || 'Notification'} <onboarding@resend.dev>`,
+    const emailPayload = {
+      from: 'onboarding@resend.dev',
       to: [to.trim()],
       subject: subject || 'Quick Update',
       text: messageBody
-    });
+    };
 
-    console.log(`✅ Mail sent successfully to ${to}`);
+    if (myReplyAddress) {
+      emailPayload.reply_to = myReplyAddress.trim();
+    }
+
+    const { data, error } = await resend.emails.send(emailPayload);
+
+    if (error) {
+      console.error(`❌ Resend Error:`, error);
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    console.log(`✅ Mail sent successfully to ${to}, ID:`, data.id);
     res.json({ success: true, data });
   } catch (err) {
-    console.error(`❌ Error sending to ${to}:`, err.message);
+    console.error(`❌ Server Exception:`, err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
