@@ -8,6 +8,9 @@ require('dotenv').config();
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+// 1. Render / Cloud Hosts Ke Liye Important (Reverse Proxy Support)
+app.set('trust proxy', 1);
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -16,7 +19,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production', // Render HTTPS ke sath kaam karega
     httpOnly: true,
     maxAge: 1000 * 60 * 60 * 8 
   }
@@ -42,15 +45,26 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const validUser = process.env.ADMIN_USER || 'admin';
   const validPass = process.env.ADMIN_PASS || 'admin123';
+
   if (username === validUser && password === validPass) {
     req.session.loggedIn = true;
-    return res.json({ success: true });
+
+    // Agar Frontend Fetch/Axios request bhej raha hai toh JSON bhejo
+    if (req.headers['content-type'] === 'application/json') {
+      return res.json({ success: true });
+    }
+    // Agar Normal HTML Form Submit ho raha hai toh Direct Redirect karo
+    return res.redirect('/launcher');
   }
-  res.json({ success: false, message: 'Invalid username or password' });
+
+  if (req.headers['content-type'] === 'application/json') {
+    return res.json({ success: false, message: 'Invalid credentials' });
+  }
+  res.redirect('/?error=invalid');
 });
 
 app.post('/logout', (req, res) => {
-  req.session.destroy(() => res.json({ success: true }));
+  req.session.destroy(() => res.redirect('/'));
 });
 
 // Basic Email Validation
@@ -62,7 +76,7 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
   if (!gmailId || !appPassword || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Missing fields' });
+    return res.status(400).json({ success: false, message: 'Missing required fields' });
   }
 
   if (!isValidEmail(to) || !isValidEmail(gmailId)) {
@@ -82,7 +96,7 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
       to,
       subject: subject || '(No Subject)',
       text: messageBody,
-      replyTo: gmailId, // Spam score kam karne ke liye
+      replyTo: gmailId,
       headers: {
         'X-Mailer': 'Node-Mailer-App'
       }
@@ -95,4 +109,4 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Fast Mailer running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
