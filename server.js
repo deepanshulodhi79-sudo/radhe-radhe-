@@ -1,7 +1,7 @@
 const express    = require('express');
 const session    = require('express-session');
 const bodyParser = require('body-parser');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const path       = require('path');
 require('dotenv').config();
 
@@ -63,44 +63,25 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-// Random Gap Delay (1.5 se 3.5 sec) taaki bot detection na ho
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 app.post('/api/send-email', requireLogin, async (req, res) => {
-  const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
+  const { apiKey, senderName, subject, messageBody, to } = req.body;
 
-  if (!gmailId || !appPassword || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Missing fields' });
+  // Resend API key ki zarurat padegi (re_xxxx)
+  if (!apiKey || !to || !messageBody) {
+    return res.status(400).json({ success: false, message: 'Missing API Key or required fields' });
   }
 
-  if (!isValidEmail(to) || !isValidEmail(gmailId)) {
-    return res.status(400).json({ success: false, message: 'Invalid email address format' });
-  }
-
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: gmailId, pass: appPassword }
-  });
+  const resend = new Resend(apiKey);
 
   try {
-    // Human-like sending delay
-    const delay = Math.floor(Math.random() * 2000) + 1500;
-    await sleep(delay);
-
-    const fromHeader = senderName ? `"${senderName}" <${gmailId}>` : gmailId;
-
-    await transporter.sendMail({
-      from: fromHeader,
-      to: to.trim(),
-      subject: subject || '',
-      text: messageBody // STRICTLY PLAIN TEXT ONLY (No HTML, No Tracking, No Unsubscribe Headers)
+    const data = await resend.emails.send({
+      from: `${senderName || 'Notification'} <onboarding@resend.dev>`,
+      to: [to.trim()],
+      subject: subject || 'Quick Update',
+      text: messageBody
     });
 
-    res.json({ success: true });
+    res.json({ success: true, data });
   } catch (err) {
     console.error(`❌ Error sending to ${to}:`, err.message);
     res.status(500).json({ success: false, message: err.message });
