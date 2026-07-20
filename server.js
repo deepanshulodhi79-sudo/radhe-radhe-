@@ -67,7 +67,7 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// Helper: 2 se 4 second ka artificial delay (spam filters ko trigger karne se rokta hai)
+// Random Gap Delay (1.5 se 3.5 sec) taaki bot detection na ho
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 app.post('/api/send-email', requireLogin, async (req, res) => {
@@ -87,30 +87,22 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
   });
 
   try {
-    // 2-3 Second ka random delay har email send par
-    const randomDelay = Math.floor(Math.random() * 2000) + 2000;
-    await sleep(randomDelay);
+    // Human-like sending delay
+    const delay = Math.floor(Math.random() * 2000) + 1500;
+    await sleep(delay);
 
     const fromHeader = senderName ? `"${senderName}" <${gmailId}>` : gmailId;
 
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject || '(No Subject)',
-      text: messageBody, // Plain Text Version
-      html: `<div style="font-family: sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
-              ${messageBody.replace(/\n/g, '<br>')}
-             </div>`, // Simple Clean HTML Version
-      replyTo: gmailId,
-      headers: {
-        'List-Unsubscribe': `<mailto:${gmailId}?subject=unsubscribe>`,
-        'X-Entity-Ref-ID': Date.now().toString()
-      }
+      subject: subject || '',
+      text: messageBody // STRICTLY PLAIN TEXT ONLY (No HTML, No Tracking, No Unsubscribe Headers)
     });
 
     res.json({ success: true });
   } catch (err) {
-    console.error(`❌ ${to}:`, err.message);
+    console.error(`❌ Error sending to ${to}:`, err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
