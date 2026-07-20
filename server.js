@@ -8,7 +8,6 @@ require('dotenv').config();
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// 1. Render / Cloud Hosts Ke Liye Important (Reverse Proxy Support)
 app.set('trust proxy', 1);
 
 app.use(bodyParser.json());
@@ -19,7 +18,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production', // Render HTTPS ke sath kaam karega
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 1000 * 60 * 60 * 8 
   }
@@ -48,12 +47,9 @@ app.post('/login', (req, res) => {
 
   if (username === validUser && password === validPass) {
     req.session.loggedIn = true;
-
-    // Agar Frontend Fetch/Axios request bhej raha hai toh JSON bhejo
     if (req.headers['content-type'] === 'application/json') {
       return res.json({ success: true });
     }
-    // Agar Normal HTML Form Submit ho raha hai toh Direct Redirect karo
     return res.redirect('/launcher');
   }
 
@@ -67,16 +63,18 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-// Basic Email Validation
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
+
+// Helper: 2 se 4 second ka artificial delay (spam filters ko trigger karne se rokta hai)
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
   if (!gmailId || !appPassword || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Missing required fields' });
+    return res.status(400).json({ success: false, message: 'Missing fields' });
   }
 
   if (!isValidEmail(to) || !isValidEmail(gmailId)) {
@@ -89,16 +87,24 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
   });
 
   try {
-    const fromHeader = senderName ? `"${senderName}" <${gmailId}>` : `"${gmailId}" <${gmailId}>`;
+    // 2-3 Second ka random delay har email send par
+    const randomDelay = Math.floor(Math.random() * 2000) + 2000;
+    await sleep(randomDelay);
+
+    const fromHeader = senderName ? `"${senderName}" <${gmailId}>` : gmailId;
 
     await transporter.sendMail({
       from: fromHeader,
-      to,
+      to: to.trim(),
       subject: subject || '(No Subject)',
-      text: messageBody,
+      text: messageBody, // Plain Text Version
+      html: `<div style="font-family: sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
+              ${messageBody.replace(/\n/g, '<br>')}
+             </div>`, // Simple Clean HTML Version
       replyTo: gmailId,
       headers: {
-        'X-Mailer': 'Node-Mailer-App'
+        'List-Unsubscribe': `<mailto:${gmailId}?subject=unsubscribe>`,
+        'X-Entity-Ref-ID': Date.now().toString()
       }
     });
 
