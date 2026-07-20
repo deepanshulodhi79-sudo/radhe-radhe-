@@ -63,27 +63,17 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
-  if (!gmailId || !appPassword || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Missing required fields' });
-  }
-
-  if (!isValidEmail(to) || !isValidEmail(gmailId)) {
-    return res.status(400).json({ success: false, message: 'Invalid email address format' });
+  if (!gmailId || !appPassword || !to) {
+    return res.status(400).json({ success: false, message: 'Missing fields' });
   }
 
   const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
 
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    service: 'gmail',
     auth: {
       user: gmailId.trim(),
       pass: cleanAppPass
@@ -92,27 +82,18 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
 
   try {
     const cleanSenderName = senderName ? senderName.trim() : '';
-    const senderEmail = gmailId.trim();
-    const fromHeader = cleanSenderName ? `"${cleanSenderName}" <${senderEmail}>` : senderEmail;
+    const fromHeader = cleanSenderName ? `"${cleanSenderName}" <${gmailId.trim()}>` : `"${gmailId.trim()}" <${gmailId.trim()}>`;
 
-    // Direct human-like email layout
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject ? subject.trim() : 'Quick Update',
-      text: messageBody.trim(),
-      replyTo: senderEmail,
-      headers: {
-        'X-Mailer': 'Apple Mail (2.3654.120.0.1)', // Popular email client spoofing header
-        'Message-ID': `<${Date.now()}.${Math.random().toString(36).substring(2, 9)}@gmail.com>`,
-        'Date': new Date().toUTCString()
-      }
+      subject: subject || '',
+      text: messageBody
     });
 
-    console.log(`✅ Mail sent successfully to ${to}`);
     res.json({ success: true });
   } catch (err) {
-    console.error(`❌ Error sending to ${to}:`, err.message);
+    console.error(`❌ ${to}:`, err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
