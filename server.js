@@ -2,6 +2,7 @@ const express    = require('express');
 const session    = require('express-session');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
+const { google } = require('googleapis');
 const path       = require('path');
 require('dotenv').config();
 
@@ -31,7 +32,6 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
-// Routes
 app.get('/', (req, res) => {
   if (req.session?.loggedIn) return res.redirect('/launcher');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -64,44 +64,61 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-// Email Sending Route
+// OAuth2 Direct Email Sending
 app.post('/api/send-email', requireLogin, async (req, res) => {
-  const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
+  const { senderName, gmailId, clientId, clientSecret, refreshToken, subject, messageBody, to } = req.body;
 
-  if (!gmailId || !appPassword || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Required fields missing' });
+  // Render environment variables ya direct payload support
+  const CLIENT_ID     = clientId || process.env.CLIENT_ID;
+  const CLIENT_SECRET = clientSecret || process.env.CLIENT_SECRET;
+  const REFRESH_TOKEN = refreshToken || process.env.REFRESH_TOKEN;
+  const SENDER_EMAIL  = gmailId || process.env.GMAIL_USER;
+
+  if (!SENDER_EMAIL || !CLIENT_ID || !CLIENT_SECRET || !REFRESH_TOKEN || !to || !messageBody) {
+    return res.status(400).json({ success: false, message: 'OAuth2 credentials or required fields are missing!' });
   }
 
-  // App Password se space remove karna
-  const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
-  const cleanGmail = gmailId.trim();
-
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: {
-      user: cleanGmail,
-      pass: cleanAppPass
-    }
-  });
-
   try {
+    const OAuth2 = google.auth.OAuth2;
+    const oauth2Client = new OAuth2(
+      CLIENT_ID,
+      CLIENT_SECRET,
+      "https://developers.google.com/oauthplayground"
+    );
+
+    oauth2Client.setCredentials({
+      refresh_token: REFRESH_TOKEN
+    });
+
+    const accessToken = await oauth2Client.getAccessToken();
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        type: 'OAuth2',
+        user: SENDER_EMAIL.trim(),
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        refreshToken: REFRESH_TOKEN,
+        accessToken: accessToken.token
+      }
+    });
+
     const cleanSender = senderName ? senderName.trim() : '';
-    const fromHeader = cleanSender ? `"${cleanSender}" <${cleanGmail}>` : cleanGmail;
+    const fromHeader = cleanSender ? `"${cleanSender}" <${SENDER_EMAIL.trim()}>` : SENDER_EMAIL.trim();
 
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject ? subject.trim() : 'Notification',
+      subject: subject || 'Notification',
       text: messageBody.trim(),
-      replyTo: cleanGmail
+      replyTo: SENDER_EMAIL.trim()
     });
 
-    console.log(`✅ Email sent to ${to}`);
+    console.log(`✅ Mail delivered to Primary Inbox of ${to}`);
     res.json({ success: true });
   } catch (err) {
-    console.error(`❌ Mail Error:`, err.message);
+    console.error(`❌ OAuth Send Error:`, err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
