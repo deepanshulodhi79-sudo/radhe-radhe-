@@ -64,14 +64,15 @@ app.post('/logout', (req, res) => {
 });
 
 app.post('/api/send-email', requireLogin, async (req, res) => {
-  const { apiKey, senderName, subject, messageBody, to } = req.body;
+  const { senderName, subject, messageBody, to, apiKey } = req.body;
 
-  // Resend API key ki zarurat padegi (re_xxxx)
-  if (!apiKey || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Missing API Key or required fields' });
+  if (!to || !messageBody) {
+    return res.status(400).json({ success: false, message: 'Missing "to" or "messageBody" fields' });
   }
 
-  const resend = new Resend(apiKey);
+  // Frontend se key aaye toh wahi use karo, warna default backend key use hogi
+  const keyToUse = apiKey || process.env.RESEND_API_KEY || 're_TQbJGbXz_5pWRgdxukArrVu3iLTXKGkxs';
+  const resend = new Resend(keyToUse.trim());
 
   try {
     const data = await resend.emails.send({
@@ -81,6 +82,7 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
       text: messageBody
     });
 
+    console.log(`✅ Mail sent successfully to ${to}`);
     res.json({ success: true, data });
   } catch (err) {
     console.error(`❌ Error sending to ${to}:`, err.message);
@@ -88,4 +90,4 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Fast Mailer running on port ${PORT}`));
