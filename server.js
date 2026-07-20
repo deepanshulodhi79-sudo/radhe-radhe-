@@ -67,6 +67,9 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// Random Gap Delay (1.5 se 3.5 sec) taaki bot detection na ho
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
@@ -78,26 +81,23 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid email address format' });
   }
 
-  // Explicit Direct Direct Gmail SMTP Configuration
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true, // SSL
-    auth: {
-      user: gmailId.trim(),
-      pass: appPassword.trim().replace(/\s+/g, '') // App password me se space remove kar deta h
-    }
+    service: 'gmail',
+    auth: { user: gmailId, pass: appPassword }
   });
 
   try {
-    const cleanSenderName = senderName ? senderName.trim() : '';
-    const fromHeader = cleanSenderName ? `"${cleanSenderName}" <${gmailId.trim()}>` : gmailId.trim();
+    // Human-like sending delay
+    const delay = Math.floor(Math.random() * 2000) + 1500;
+    await sleep(delay);
+
+    const fromHeader = senderName ? `"${senderName}" <${gmailId}>` : gmailId;
 
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject ? subject.trim() : 'Quick Update',
-      text: messageBody
+      subject: subject || '',
+      text: messageBody // STRICTLY PLAIN TEXT ONLY (No HTML, No Tracking, No Unsubscribe Headers)
     });
 
     res.json({ success: true });
