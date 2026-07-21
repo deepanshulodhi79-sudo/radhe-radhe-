@@ -31,6 +31,7 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
+// 1. Static Page Routes
 app.get('/', (req, res) => {
   if (req.session?.loggedIn) return res.redirect('/launcher');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -40,6 +41,7 @@ app.get('/launcher', requireLogin, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
+// 2. Login & Logout
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const validUser = process.env.ADMIN_USER || 'admin';
@@ -63,12 +65,12 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-// Human-like Anti-Spam Headers Integration
+// 3. Simple Send Email Route
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
   if (!gmailId || !appPassword || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Fields missing' });
+    return res.status(400).json({ success: false, message: 'Required fields missing' });
   }
 
   const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
@@ -89,15 +91,8 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject ? subject.trim() : 'Quick Update',
-      text: messageBody.trim(),
-      replyTo: cleanGmail,
-      // Google spam filter ko human email jaisa dikhane ke liye extra headers:
-      headers: {
-        'X-Priority': '3',
-        'X-Mailer': 'Nodemailer',
-        'List-Unsubscribe': `<mailto:${cleanGmail}?subject=unsubscribe>`
-      }
+      subject: subject ? subject.trim() : '',
+      text: messageBody
     });
 
     console.log(`✅ Mail sent to ${to}`);
@@ -108,4 +103,4 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Fast Mailer running on port ${PORT}`));
