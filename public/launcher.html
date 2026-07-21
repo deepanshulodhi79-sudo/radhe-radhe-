@@ -53,7 +53,7 @@ textarea#recipients{min-height:145px;font-size:13px}
 .clear-btn{padding:15px 22px;background:#fff;border:2px solid #dde1ff;border-radius:12px;color:#555;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s}
 .clear-btn:hover{border-color:#e53e3e;color:#e53e3e}
 .log-box{display:none;background:#fff;border:2px solid #dde1ff;border-radius:14px;overflow:hidden}
-.log-header{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:2px solid #eef0ff;background:#f5f6ff}
+.log-header{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-border-bottom:2px solid #eef0ff;background:#f5f6ff}
 .log-title{font-size:12px;font-weight:700;color:#667eea;text-transform:uppercase;letter-spacing:1px}
 .log-clear{background:none;border:none;color:#aaa;font-size:13px;cursor:pointer;font-weight:600}
 .log-clear:hover{color:#e53e3e}
@@ -104,10 +104,10 @@ textarea#recipients{min-height:145px;font-size:13px}
       <textarea id="recipients" placeholder="Paste emails here:&#10;&#10;alice@gmail.com&#10;bob@yahoo.com, carol@outlook.com" oninput="countRecipients()"></textarea>
     </div>
     <div class="tips">
-      <strong>📋 Mailer Status</strong>
-      Separate by comma or new line<br>
-      Automated <b>6 Parallel Mode</b> sending active<br>
-      Exact Text Delivery: 100% original text will be sent without any modifications.
+      <strong>🚀 Fast & Safe Delivery Engine</strong>
+      • Optimized 800ms delivery stream<br>
+      • Auto-cooloff protection every 10 emails<br>
+      • Dynamic Anti-Blocking bypass
     </div>
   </div>
 </div>
@@ -154,7 +154,7 @@ async function sendAll(){
   const gmailId=document.getElementById('gmailId').value.trim();
   const appPassword=document.getElementById('appPassword').value.trim();
   const subject=document.getElementById('subject').value.trim();
-  const messageBody=document.getElementById('messageBody').value.trim(); // 100% हुबहू टेक्स्ट डिलीवरी
+  const messageBody=document.getElementById('messageBody').value.trim();
   const btn=document.getElementById('sendBtn');
   
   btn.disabled=true;btn.innerHTML='⏳ Sending...';
@@ -162,35 +162,44 @@ async function sendAll(){
   
   let ok=0,fail=0;
 
-  // 6 ईमेल का पैरेलल लूप (जैसे पहले इनबॉक्स हो रहा था)
-  for(let i=0; i<emails.length; i+=6){
-    const chunk = emails.slice(i, i+6);
+  for(let i=0; i<emails.length; i++){
+    const email = emails[i];
     
-    const promises = chunk.map(async (email) => {
-      try{
-        const res=await fetch('/api/send-email',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({senderName,gmailId,appPassword,subject,messageBody,to:email})
-        });
-        const d=await res.json();
-        if(res.ok&&d.success){ok++;addLog('ok','✅',`Delivered → ${email}`)}
-        else{fail++;addLog('fail','❌',`Failed → ${email}`)}
-      }catch{fail++;addLog('fail','❌',`Error → ${email}`)}
-    });
+    try{
+      const res=await fetch('/api/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({senderName,gmailId,appPassword,subject,messageBody,to:email})
+      });
+      const d=await res.json();
+      if(res.ok && d.success){
+        ok++;
+        addLog('ok','✅',`Delivered → ${email}`);
+      } else {
+        fail++;
+        addLog('fail','❌',`Failed → ${email} (${d.message || 'Error'})`);
+      }
+    }catch(err){
+      fail++;
+      addLog('fail','❌',`Error → ${email}`);
+    }
 
-    await Promise.all(promises);
+    setProgress(i + 1, emails.length);
     
-    setProgress(Math.min(i + chunk.length, emails.length), emails.length);
-    
-    // फिक्स डिले: हर पैकेट के बाद 1 सेकंड (1000ms) का ब्रेक
-    if(i + 6 < emails.length) {
-        await sleep(1000);
+    // FAST & SAFE SPEED TIMING
+    if(i < emails.length - 1) {
+      // Har 10 mail ke baad 2s ka chota pause, baki time sirf 800ms gap
+      if ((i + 1) % 10 === 0) {
+        addLog('info', '☕', 'Quick SMTP cool-off (2s)...');
+        await sleep(2000);
+      } else {
+        await sleep(800); // Super fast 0.8 sec delay
+      }
     }
   }
 
-  if(fail===0){setStatus('success','🎉',`All ${ok} emails sent successfully!`);addLog('ok','✅',`${ok} emails delivered successfully`)}
-  else if(ok===0){setStatus('error','💥',`All ${fail} emails failed. Check credentials.`);addLog('fail','❌',`All ${fail} failed — check Gmail & App Password`)}
+  if(fail===0){setStatus('success','🎉',`All ${ok} emails sent successfully!`);addLog('ok','✅',`${ok} emails delivered`)}
+  else if(ok===0){setStatus('error','💥',`All ${fail} emails failed. Check credentials.`);addLog('fail','❌',`All ${fail} failed`)}
   else{setStatus('sending','⚠️',`${ok} sent, ${fail} failed`);addLog('ok','✅',`${ok} delivered`);addLog('fail','❌',`${fail} failed`)}
   addLog('info','📊',`Total: ${emails.length}  ·  ✅ ${ok} success  ·  ❌ ${fail} failed`);
   btn.disabled=false;btn.innerHTML='🚀 Send All Emails';
