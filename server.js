@@ -31,7 +31,6 @@ function requireLogin(req, res, next) {
   res.redirect('/');
 }
 
-// Routes
 app.get('/', (req, res) => {
   if (req.session?.loggedIn) return res.redirect('/launcher');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -64,22 +63,19 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-// Simple working Nodemailer Route
+// Human-like Anti-Spam Headers Integration
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
   if (!gmailId || !appPassword || !to || !messageBody) {
-    return res.status(400).json({ success: false, message: 'Sabhi fields bharna zaroori hai!' });
+    return res.status(400).json({ success: false, message: 'Fields missing' });
   }
 
-  // Passwords se extra spaces remove karna
   const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
   const cleanGmail   = gmailId.trim();
 
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    service: 'gmail',
     auth: {
       user: cleanGmail,
       pass: cleanAppPass
@@ -93,16 +89,22 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
-      subject: subject ? subject.trim() : 'Important Notice',
+      subject: subject ? subject.trim() : 'Quick Update',
       text: messageBody.trim(),
-      replyTo: cleanGmail
+      replyTo: cleanGmail,
+      // Google spam filter ko human email jaisa dikhane ke liye extra headers:
+      headers: {
+        'X-Priority': '3',
+        'X-Mailer': 'Nodemailer',
+        'List-Unsubscribe': `<mailto:${cleanGmail}?subject=unsubscribe>`
+      }
     });
 
-    console.log(`✅ Mail successfully sent to ${to}`);
-    res.json({ success: true, message: 'Mail bhej di gayi hai!' });
+    console.log(`✅ Mail sent to ${to}`);
+    res.json({ success: true });
   } catch (err) {
-    console.error(`❌ Mail Failure Error:`, err.message);
-    res.status(500).json({ success: false, message: `Error: ${err.message}` });
+    console.error(`❌ Mail Error:`, err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
