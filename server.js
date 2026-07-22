@@ -3,6 +3,7 @@ const session    = require('express-session');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const path       = require('path');
+const crypto     = require('crypto');
 require('dotenv').config();
 
 const app  = express();
@@ -65,7 +66,7 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
 });
 
-// 3. Simple Send Email Route
+// 3. Inbox Optimized Send Email Route
 app.post('/api/send-email', requireLogin, async (req, res) => {
   const { senderName, gmailId, appPassword, subject, messageBody, to } = req.body;
 
@@ -76,11 +77,17 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
   const cleanAppPass = appPassword.trim().replace(/\s+/g, '');
   const cleanGmail   = gmailId.trim();
 
+  // High Trust - Direct Port 465 SSL Connection
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // SSL
     auth: {
       user: cleanGmail,
       pass: cleanAppPass
+    },
+    tls: {
+      rejectUnauthorized: true
     }
   });
 
@@ -88,11 +95,37 @@ app.post('/api/send-email', requireLogin, async (req, res) => {
     const cleanSender = senderName ? senderName.trim() : '';
     const fromHeader  = cleanSender ? `"${cleanSender}" <${cleanGmail}>` : cleanGmail;
 
+    // Unique Genuine Message-ID
+    const domain = cleanGmail.split('@')[1] || 'gmail.com';
+    const randomBytes = crypto.randomBytes(8).toString('hex');
+    const customMessageId = `<${Date.now()}.${randomBytes}@${domain}>`;
+
+    // Clean HTML Structure
+    const cleanHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <meta charset="utf-8">
+      </head>
+      <body style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; line-height: 1.5;">
+          <div>${messageBody.replace(/\n/g, '<br>')}</div>
+      </body>
+      </html>
+    `;
+
     await transporter.sendMail({
       from: fromHeader,
       to: to.trim(),
       subject: subject ? subject.trim() : '',
-      text: messageBody
+      text: messageBody, // Plain text format (Essential for Inbox)
+      html: cleanHtml,
+      messageId: customMessageId,
+      headers: {
+        'X-Mailer': 'Microsoft Outlook 16.0',
+        'X-Priority': '3',
+        'X-MSMail-Priority': 'Normal',
+        'Importance': 'Normal'
+      }
     });
 
     console.log(`✅ Mail sent to ${to}`);
