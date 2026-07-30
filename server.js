@@ -1,183 +1,128 @@
-import express from 'express';
-import session from 'express-session';
-import nodemailer from 'nodemailer';
-import path from 'path';
-import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
-
-declare module 'express-session' {
-  interface SessionData {
-    loggedIn?: boolean;
-  }
-}
-
-dotenv.config();
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const nodemailer = require('nodemailer');
+const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 8080;
 
-app.set('trust proxy', 1);
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
+});
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'fast-mailer-secret-2024',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === 'production',
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 8,
-    },
-  })
-);
-
-// Middleware to check authentication
-function requireLogin(req: any, res: any, next: any) {
-  if (req.session?.loggedIn) return next();
-  res.status(401).json({ success: false, message: 'Unauthorized. Please login.' });
+// Helper Delay Function
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Authentication status
-app.get('/api/auth/status', (req, res) => {
-  res.json({ loggedIn: Boolean(req.session?.loggedIn) });
-});
+// 📦 PRO FEATURE: Background Mail Worker Function
+async function processEmailQueue(accounts, recipientList, subject, message, senderName) {
+  console.log(`🚀 Queue started for ${recipientList.length} emails...`);
 
-// Login route
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  const validUser = process.env.ADMIN_USER || 'admin';
-  const validPass = process.env.ADMIN_PASS || 'admin123';
-
-  if (username === validUser && password === validPass) {
-    if (req.session) {
-      req.session.loggedIn = true;
-    }
-    return res.json({ success: true, message: 'Login successful' });
-  }
-
-  return res.status(401).json({ success: false, message: 'Invalid credentials' });
-});
-
-// Logout route
-app.post('/logout', (req, res) => {
-  if (req.session) {
-    req.session.destroy(() => {
-      res.json({ success: true });
+  // Transporters pool create karna
+  const transporters = accounts.map(acc => {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: acc.email.trim(),
+        pass: acc.password.replace(/\s+/g, '')
+      }
     });
-  } else {
-    res.json({ success: true });
-  }
-});
-
-// Email sending route with enhanced headers & deliverability best practices
-app.post('/api/send-email', requireLogin, async (req, res) => {
-  const {
-    senderName,
-    gmailId,
-    appPassword,
-    subject,
-    messageBody,
-    htmlBody,
-    to,
-    replyTo,
-    smtpHost,
-    smtpPort,
-    smtpSecure,
-  } = req.body;
-
-  if (!gmailId || !appPassword || !to || (!messageBody && !htmlBody)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Required fields missing (Sender Email, App Password, Recipient, Body)',
-    });
-  }
-
-  const cleanGmail = String(gmailId).trim();
-  const cleanAppPass = String(appPassword).trim().replace(/\s+/g, '');
-  const cleanTo = String(to).trim();
-  const cleanReplyTo = replyTo ? String(replyTo).trim() : cleanGmail;
-
-  // Custom SMTP vs Standard Gmail SMTP fallback
-  const isCustomSmtp = Boolean(smtpHost);
-  const host = isCustomSmtp ? String(smtpHost).trim() : 'smtp.gmail.com';
-  const port = smtpPort ? Number(smtpPort) : (smtpSecure ? 465 : 587);
-  const secure = smtpSecure !== undefined ? Boolean(smtpSecure) : port === 465;
-
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: {
-      user: cleanGmail,
-      pass: cleanAppPass,
-    },
-    tls: {
-      rejectUnauthorized: false, // Prevents self-signed cert blocking in proxy setups
-    },
   });
 
-  try {
-    const cleanSender = senderName ? String(senderName).trim() : '';
-    // Recommended From Header standard: "Name" <email>
-    const fromHeader = cleanSender ? `"${cleanSender}" <${cleanGmail}>` : cleanGmail;
+  for (let i = 0; i < recipientList.length; i++) {
+    const toEmail = recipientList[i];
+    
+    // Account Rotation (Round-Robin Selection)
+    const accIndex = i % accounts.length;
+    const currentAcc = accounts[accIndex];
+    const currentTransporter = transporters[accIndex];
 
-    // Build standard multi-part message (both text and HTML boost deliverability scores)
-    const textContent = messageBody || (htmlBody ? htmlBody.replace(/<[^>]+>/g, '') : '');
-    const htmlContent = htmlBody || (messageBody ? `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333; font-size: 15px;">${messageBody.replace(/\n/g, '<br>')}</div>` : '');
-
-    const mailOptions: nodemailer.SendMailOptions = {
-      from: fromHeader,
-      to: cleanTo,
-      replyTo: cleanReplyTo,
-      subject: subject ? String(subject).trim() : 'No Subject',
-      text: textContent,
-      html: htmlContent,
+    const mailOptions = {
+      from: senderName ? `"${senderName}" <${currentAcc.email}>` : currentAcc.email,
+      to: toEmail,
+      subject: subject || "Important Business Notice",
+      text: message || "Hello, please review the requested details.",
+      // Headers for corporate email clients
       headers: {
-        'X-Mailer': 'FastMailer Pro/2.0',
-        'X-Auto-Response-Suppress': 'OOF, AutoReply',
-        'Precedence': 'bulk',
-      },
+        'X-Mailer': 'Enterprise Mailer v2.0',
+        'X-Priority': '3'
+      }
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Mail sent successfully to ${cleanTo}. MessageId: ${info.messageId}`);
+    try {
+      await currentTransporter.sendMail(mailOptions);
+      console.log(`✅ [${i + 1}/${recipientList.length}] Sent to ${toEmail} via Account: ${currentAcc.email}`);
+    } catch (err) {
+      console.error(`❌ [${i + 1}/${recipientList.length}] Failed for ${toEmail} using ${currentAcc.email}:`, err.message);
+    }
 
+    // Safe Gap between sends (Accounts divide hone se speed fast rehti hai)
+    if (i < recipientList.length - 1) {
+      await delay(2000); 
+    }
+  }
+
+  console.log('🏁 All emails in queue processed!');
+}
+
+// 📩 Send API Endpoint
+app.post('/send', (req, res) => {
+  try {
+    const { senderName, accounts, recipients, subject, message } = req.body;
+
+    /*
+      Expected JSON Body format for Pro Level:
+      {
+        "senderName": "My Company",
+        "accounts": [
+           {"email": "sender1@gmail.com", "password": "app-pass-1"},
+           {"email": "sender2@gmail.com", "password": "app-pass-2"}
+        ],
+        "recipients": "client1@gmail.com, client2@gmail.com",
+        "subject": "Project Update",
+        "message": "Hello Client..."
+      }
+    */
+
+    // Backward compatibility for single account
+    let smtpAccounts = accounts;
+    if (!smtpAccounts && req.body.email && req.body.password) {
+      smtpAccounts = [{ email: req.body.email, password: req.body.password }];
+    }
+
+    if (!smtpAccounts || smtpAccounts.length === 0 || !recipients) {
+      return res.json({ success: false, message: "❌ Account credentials aur Recipients zaroori hain!" });
+    }
+
+    const recipientList = recipients
+      .split(/[\n,]+/)
+      .map(r => r.trim())
+      .filter(Boolean);
+
+    if (recipientList.length === 0) {
+      return res.json({ success: false, message: "❌ Recipients list khali hai!" });
+    }
+
+    // Immediately respond to user (UI won't freeze or lag)
     res.json({
       success: true,
-      messageId: info.messageId,
-      accepted: info.accepted,
-      response: info.response,
+      message: `⚡ Dispatching ${recipientList.length} email(s) across ${smtpAccounts.length} sender account(s) in background!`
     });
-  } catch (err: any) {
-    console.error(`❌ Mail Error:`, err?.message || err);
-    res.status(500).json({
-      success: false,
-      message: err?.message || 'Failed to send email. Check credentials and App Password.',
-    });
+
+    // Run queue in non-blocking background process
+    processEmailQueue(smtpAccounts, recipientList, subject, message, senderName);
+
+  } catch (err) {
+    return res.json({ success: false, message: `❌ Server Error: ${err.message}` });
   }
 });
 
-async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Fast Mailer running on http://localhost:${PORT}`);
-  });
-}
-
-startServer();
+app.listen(PORT, () => {
+  console.log(`🚀 Pro Enterprise Mailer running on http://localhost:${PORT}`);
+});
