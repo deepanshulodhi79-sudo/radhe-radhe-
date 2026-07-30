@@ -15,47 +15,45 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// Human Jitter Delay (2.5s - 4s) for Safe Anti-Spam Sending
+// Human Jitter Delay (2.5s - 4s)
 function getHumanDelay() {
   const ms = Math.floor(Math.random() * 1500) + 2500;
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🛡️ BACKGROUND WORKER ENGINE (Reliable & Low-Spam)
+// 🛡️ BACKGROUND WORKER ENGINE
 async function runBackgroundEmailWorker(cleanEmail, cleanPassword, mailDetails, recipientList) {
   const { senderName, subject, message } = mailDetails;
   
   console.log(`[Queue Engine] Started processing ${recipientList.length} emails in background...`);
 
-  // Direct Transporter Setup (No pool conflicts)
+  // Direct Gmail Transporter
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    service: 'gmail',
     auth: {
       user: cleanEmail,
       pass: cleanPassword
     }
   });
 
+  // Verify Transporter Auth First
+  try {
+    await transporter.verify();
+    console.log("✅ Credentials verified successfully! Sending emails...");
+  } catch (authError) {
+    console.error("❌ Authentication Failed! Invalid Email or App Password:", authError.message);
+    return;
+  }
+
   for (let i = 0; i < recipientList.length; i++) {
     const toEmail = recipientList[i];
     const textContent = message || "Hello, please review the requested details.";
 
-    // Dynamic Header generation to pass anti-spam filters
-    const uniqueHash = Math.random().toString(36).substring(2, 9);
-    const dynamicMessageId = `<${Date.now()}.${uniqueHash}@gmail.com>`;
-
     const mailOptions = {
       from: senderName ? `"${senderName}" <${cleanEmail}>` : cleanEmail,
       to: toEmail,
-      subject: subject || "Important Notification Update",
-      text: textContent,
-      html: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #111; line-height: 1.5;">${textContent.replace(/\n/g, '<br>')}</div>`,
-      headers: {
-        'Message-ID': dynamicMessageId,
-        'X-Priority': '3'
-      }
+      subject: subject || "Notification Update",
+      text: textContent
     };
 
     try {
@@ -65,16 +63,14 @@ async function runBackgroundEmailWorker(cleanEmail, cleanPassword, mailDetails, 
       console.error(`[Worker] ❌ (${i + 1}/${recipientList.length}) Failed for: ${toEmail} | Error: ${err.message}`);
     }
 
-    // Natural Delay Between Emails
     if (i < recipientList.length - 1) {
       await getHumanDelay();
     }
   }
 
-  console.log(`[Queue Engine] 🏁 Background task completed for all emails.`);
+  console.log(`[Queue Engine] 🏁 Background task completed.`);
 }
 
-// 📩 Send API Endpoint (Fast Response)
 app.post('/send', (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
@@ -96,16 +92,15 @@ app.post('/send', (req, res) => {
     }
 
     const cleanEmail = email.trim();
-    // App password se space hatana
+    // Spaces remove
     const cleanPassword = password.replace(/\s+/g, '');
 
-    // ⚡ 1. INSTANT FAST RESPONSE (Frontend UI Screen Fast)
+    // Instant Fast Response to UI
     res.json({
       success: true,
-      message: `⚡ Dispatching ${recipientList.length} email(s) in background queue!`
+      message: `⚡ Processing ${recipientList.length} email(s) in background...`
     });
 
-    // 🚀 2. BACKGROUND WORKER PROCESS
     const mailDetails = {
       senderName: senderName ? senderName.trim() : '',
       subject: subject ? subject.trim() : '',
@@ -120,5 +115,5 @@ app.post('/send', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Fixed Mailer active on http://localhost:${PORT}`);
+  console.log(`🚀 Mailer active on http://localhost:${PORT}`);
 });
