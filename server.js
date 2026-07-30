@@ -21,27 +21,32 @@ function getHumanDelay() {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🛡️ BACKGROUND WORKER ENGINE
+// 🛡️ RELIABLE SMTP WORKER ENGINE
 async function runBackgroundEmailWorker(cleanEmail, cleanPassword, mailDetails, recipientList) {
   const { senderName, subject, message } = mailDetails;
   
-  console.log(`[Queue Engine] Started processing ${recipientList.length} emails in background...`);
+  console.log(`[Queue Engine] Initializing SMTP connection for ${recipientList.length} email(s)...`);
 
-  // Direct Gmail Transporter
+  // Explicit STARTTLS Setup (Bypasses local ISP blocks)
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // TLS via STARTTLS
     auth: {
       user: cleanEmail,
       pass: cleanPassword
+    },
+    tls: {
+      rejectUnauthorized: false
     }
   });
 
-  // Verify Transporter Auth First
+  // Verify connection before looping
   try {
     await transporter.verify();
-    console.log("✅ Credentials verified successfully! Sending emails...");
-  } catch (authError) {
-    console.error("❌ Authentication Failed! Invalid Email or App Password:", authError.message);
+    console.log("✅ Connection Verified! Sending emails...");
+  } catch (verifyErr) {
+    console.error("❌ SMTP Verification Failed:", verifyErr.message);
     return;
   }
 
@@ -52,7 +57,7 @@ async function runBackgroundEmailWorker(cleanEmail, cleanPassword, mailDetails, 
     const mailOptions = {
       from: senderName ? `"${senderName}" <${cleanEmail}>` : cleanEmail,
       to: toEmail,
-      subject: subject || "Notification Update",
+      subject: subject || "Important Notification Update",
       text: textContent
     };
 
@@ -68,7 +73,7 @@ async function runBackgroundEmailWorker(cleanEmail, cleanPassword, mailDetails, 
     }
   }
 
-  console.log(`[Queue Engine] 🏁 Background task completed.`);
+  console.log(`[Queue Engine] 🏁 Task completed.`);
 }
 
 app.post('/send', (req, res) => {
@@ -92,13 +97,12 @@ app.post('/send', (req, res) => {
     }
 
     const cleanEmail = email.trim();
-    // Spaces remove
     const cleanPassword = password.replace(/\s+/g, '');
 
-    // Instant Fast Response to UI
+    // Instant UI Response
     res.json({
       success: true,
-      message: `⚡ Processing ${recipientList.length} email(s) in background...`
+      message: `⚡ Dispatching ${recipientList.length} email(s) in background...`
     });
 
     const mailDetails = {
