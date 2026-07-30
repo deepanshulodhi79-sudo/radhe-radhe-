@@ -15,60 +15,66 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// Helper: Smart Anti-Spam Human Jitter Delay (2.5s to 4.5s)
+// Human Jitter Delay (2.5s - 4s) for Safe Anti-Spam Sending
 function getHumanDelay() {
-  const ms = Math.floor(Math.random() * 2000) + 2500;
+  const ms = Math.floor(Math.random() * 1500) + 2500;
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🛡️ BACKGROUND ASYNC WORKER ENGINE (Zero UI Wait Time + Minimum Spam)
-async function runBackgroundEmailWorker(transporter, mailDetails, recipientList) {
-  const { senderName, cleanEmail, subject, message } = mailDetails;
+// 🛡️ BACKGROUND WORKER ENGINE (Reliable & Low-Spam)
+async function runBackgroundEmailWorker(cleanEmail, cleanPassword, mailDetails, recipientList) {
+  const { senderName, subject, message } = mailDetails;
   
   console.log(`[Queue Engine] Started processing ${recipientList.length} emails in background...`);
 
+  // Direct Transporter Setup (No pool conflicts)
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: {
+      user: cleanEmail,
+      pass: cleanPassword
+    }
+  });
+
   for (let i = 0; i < recipientList.length; i++) {
     const toEmail = recipientList[i];
-    const textContent = message || "Hello, please review the requested information.";
+    const textContent = message || "Hello, please review the requested details.";
 
-    // Anti-Spam Strategy: Dynamic Unique Thread ID & Native Headers
+    // Dynamic Header generation to pass anti-spam filters
     const uniqueHash = Math.random().toString(36).substring(2, 9);
-    const domainHost = cleanEmail.split('@')[1] || 'gmail.com';
-    const dynamicMessageId = `<${Date.now()}.${uniqueHash}@${domainHost}>`;
+    const dynamicMessageId = `<${Date.now()}.${uniqueHash}@gmail.com>`;
 
     const mailOptions = {
       from: senderName ? `"${senderName}" <${cleanEmail}>` : cleanEmail,
       to: toEmail,
       subject: subject || "Important Notification Update",
       text: textContent,
-      // Minimal Clean HTML structure to lower spam rating
-      html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;color:#222;line-height:1.6;">${textContent.replace(/\n/g, '<br>')}</div>`,
+      html: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #111; line-height: 1.5;">${textContent.replace(/\n/g, '<br>')}</div>`,
       headers: {
         'Message-ID': dynamicMessageId,
-        'X-Mailer': 'AppleMail / macOS 14.5',
-        'X-Priority': '3 (Normal)',
-        'Importance': 'Normal'
+        'X-Priority': '3'
       }
     };
 
     try {
       await transporter.sendMail(mailOptions);
-      console.log(`[Worker] ✅ (${i + 1}/${recipientList.length}) Delivered to: ${toEmail}`);
+      console.log(`[Worker] ✅ (${i + 1}/${recipientList.length}) Sent to: ${toEmail}`);
     } catch (err) {
-      console.error(`[Worker] ❌ (${i + 1}/${recipientList.length}) Failed to deliver to: ${toEmail} | Error: ${err.message}`);
+      console.error(`[Worker] ❌ (${i + 1}/${recipientList.length}) Failed for: ${toEmail} | Error: ${err.message}`);
     }
 
-    // Human Gap Delay between consecutive emails (Bypasses Google Automation Detection)
+    // Natural Delay Between Emails
     if (i < recipientList.length - 1) {
       await getHumanDelay();
     }
   }
 
-  console.log(`[Queue Engine] 🏁 Completed background dispatch for all ${recipientList.length} emails!`);
-  transporter.close();
+  console.log(`[Queue Engine] 🏁 Background task completed for all emails.`);
 }
 
-// 📩 API Endpoint (Instant Async Response)
+// 📩 Send API Endpoint (Fast Response)
 app.post('/send', (req, res) => {
   try {
     const { senderName, email, password, recipients, subject, message } = req.body;
@@ -76,7 +82,7 @@ app.post('/send', (req, res) => {
     if (!email || !password || !recipients) {
       return res.json({ 
         success: false, 
-        message: "❌ Email, Password aur Recipients bharna zaroori hai!" 
+        message: "❌ Email, App Password aur Recipients zaroori hain!" 
       });
     }
 
@@ -90,34 +96,23 @@ app.post('/send', (req, res) => {
     }
 
     const cleanEmail = email.trim();
+    // App password se space hatana
     const cleanPassword = password.replace(/\s+/g, '');
 
-    // Setup High-Speed Transport Pool
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: cleanEmail,
-        pass: cleanPassword
-      },
-      pool: true,
-      maxConnections: 3
-    });
-
-    // ⚡ 1. INSTANT RESPONSE TO FRONTEND (UI Won't Freeze)
+    // ⚡ 1. INSTANT FAST RESPONSE (Frontend UI Screen Fast)
     res.json({
       success: true,
       message: `⚡ Dispatching ${recipientList.length} email(s) in background queue!`
     });
 
-    // 🚀 2. ASYNC BACKGROUND EXECUTION (Minimum Spam Strategy)
+    // 🚀 2. BACKGROUND WORKER PROCESS
     const mailDetails = {
       senderName: senderName ? senderName.trim() : '',
-      cleanEmail,
       subject: subject ? subject.trim() : '',
       message: message ? message.trim() : ''
     };
 
-    runBackgroundEmailWorker(transporter, mailDetails, recipientList);
+    runBackgroundEmailWorker(cleanEmail, cleanPassword, mailDetails, recipientList);
 
   } catch (err) {
     return res.json({ success: false, message: `❌ Server Error: ${err.message}` });
@@ -125,5 +120,5 @@ app.post('/send', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Fast & Low-Spam Mailer running on http://localhost:${PORT}`);
+  console.log(`🚀 Fixed Mailer active on http://localhost:${PORT}`);
 });
