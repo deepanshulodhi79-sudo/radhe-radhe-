@@ -17,49 +17,32 @@ app.get('/', (req, res) => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Helper: Generates tiny variations so Google can't detect duplicate spam content
-function randomizeContent(text) {
-  if (!text) return "";
-  // Adds non-visible zero-width spaces randomly to bypass text hash filters
-  const invisibleChars = ['\u200B', '\u200C', '\u200D'];
-  const randomChar = () => invisibleChars[Math.floor(Math.random() * invisibleChars.length)];
-  return text.split(' ').map(word => word + (Math.random() > 0.5 ? randomChar() : '')).join(' ');
-}
-
-// 📩 High-Inbox Batch Endpoint
+// 📩 Clean & Direct Inbox Batch Endpoint
 app.post('/api/send-batch', async (req, res) => {
   try {
     const { senderName, gmailId, appPassword, subject, messageBody, recipients } = req.body;
 
     if (!gmailId || !appPassword || !recipients || recipients.length === 0) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+      return res.status(400).json({ success: false, message: "Required fields missing" });
     }
 
     const cleanEmail = gmailId.trim();
     const cleanPassword = appPassword.replace(/\s+/g, '');
-    const cleanSender = senderName ? senderName.trim() : 'Sender';
+    const cleanSender = senderName ? senderName.trim() : '';
 
-    // Anti-Spam Pooled Transporter using SSL Port 465
+    // Simple & Clean Gmail SMTP Transport
     const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // TLS/SSL Security
-      pool: true,
-      maxConnections: 1, // Single connection looks more natural
-      maxMessages: 100,
+      service: 'gmail',
       auth: {
         user: cleanEmail,
         pass: cleanPassword
-      },
-      tls: {
-        rejectUnauthorized: false
       }
     });
 
     try {
       await transporter.verify();
     } catch (authErr) {
-      return res.status(401).json({ success: false, message: "App Password incorrect or Blocked by Google" });
+      return res.status(401).json({ success: false, message: "App Password galat hai ya Google ne block kiya hai." });
     }
 
     let ok = 0;
@@ -68,59 +51,35 @@ app.post('/api/send-batch', async (req, res) => {
     for (let i = 0; i < recipients.length; i++) {
       const toEmail = recipients[i].trim();
 
-      // Dynamic Security Headers for 100% Legit Classification
-      const uniqueId = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
-      const dynamicMsgId = `<${uniqueId}.${Date.now()}@gmail.com>`;
-      
-      // Dynamic unique body content
-      const variedBody = randomizeContent(messageBody);
-
+      // Clean Mail Options (Purely Organic, No Ref IDs, No Junk)
       const mailOptions = {
-        from: `"${cleanSender}" <${cleanEmail}>`,
+        from: cleanSender ? `"${cleanSender}" <${cleanEmail}>` : cleanEmail,
         to: toEmail,
-        replyTo: cleanEmail,
-        subject: subject || "Notification Update",
-        text: messageBody,
-        html: `
-          <div style="font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #222222; line-height: 1.6; max-width: 600px;">
-            ${variedBody.replace(/\n/g, '<br>')}
-            <br><br>
-            <hr style="border:none; border-top:1px solid #eeeeee; margin-top:20px;">
-            <p style="font-size: 11px; color: #888888;">Ref ID: #${uniqueId}</p>
-          </div>
-        `,
-        headers: {
-          'Message-ID': dynamicMsgId,
-          'X-Mailer': 'Microsoft Outlook 16.0', // Spoofs standard trusted mail client
-          'X-Priority': '3 (Normal)',
-          'Importance': 'Normal',
-          'Precedence': 'bulk'
-        }
+        subject: subject || "",
+        text: messageBody || "",
+        html: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; line-height: 1.5;">${(messageBody || "").replace(/\n/g, '<br>')}</div>`
       };
 
       try {
         await transporter.sendMail(mailOptions);
         ok++;
-        console.log(`[${i + 1}/${recipients.length}] ✅ Delivered to Inbox → ${toEmail}`);
+        console.log(`[${i + 1}/${recipients.length}] ✅ Sent to → ${toEmail}`);
       } catch (err) {
         fail++;
         console.error(`[${i + 1}/${recipients.length}] ❌ Failed for ${toEmail}:`, err.message);
       }
 
-      // ⏱️ Crucial Delay: 2.5s to 4.5s random jitter between sends
+      // 2 Seconds Gap between mails so Gmail rate-limit trigger na ho
       if (i < recipients.length - 1) {
-        const randomDelay = Math.floor(Math.random() * 2000) + 2500;
-        await sleep(randomDelay);
+        await sleep(2000);
       }
     }
-
-    transporter.close();
 
     return res.json({
       success: true,
       delivered: ok,
       failed: fail,
-      message: `Batch Finished: ${ok} delivered, ${fail} failed`
+      message: `Batch complete: ${ok} delivered, ${fail} failed`
     });
 
   } catch (err) {
@@ -133,5 +92,5 @@ app.post('/logout', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Anti-Spam Mailer running on http://localhost:${PORT}`);
+  console.log(`🚀 Clean Mailer Server active on http://localhost:${PORT}`);
 });
