@@ -15,9 +15,13 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Human-like Variable Delay (3 to 6 seconds random jitter)
+function getRandomDelay() {
+  const ms = Math.floor(Math.random() * 3000) + 3000; // 3000ms - 6000ms
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-// 📩 Clean & Direct Inbox Batch Endpoint
+// 📩 High-Deliverability Batch Endpoint
 app.post('/api/send-batch', async (req, res) => {
   try {
     const { senderName, gmailId, appPassword, subject, messageBody, recipients } = req.body;
@@ -30,7 +34,7 @@ app.post('/api/send-batch', async (req, res) => {
     const cleanPassword = appPassword.replace(/\s+/g, '');
     const cleanSender = senderName ? senderName.trim() : '';
 
-    // Simple & Clean Gmail SMTP Transport
+    // Standard Gmail SMTP Transport
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -42,7 +46,7 @@ app.post('/api/send-batch', async (req, res) => {
     try {
       await transporter.verify();
     } catch (authErr) {
-      return res.status(401).json({ success: false, message: "App Password galat hai ya Google ne block kiya hai." });
+      return res.status(401).json({ success: false, message: "App Password incorrect or Blocked by Google" });
     }
 
     let ok = 0;
@@ -51,27 +55,45 @@ app.post('/api/send-batch', async (req, res) => {
     for (let i = 0; i < recipients.length; i++) {
       const toEmail = recipients[i].trim();
 
-      // Clean Mail Options (Purely Organic, No Ref IDs, No Junk)
+      const plainTextContent = messageBody || "";
+      const formattedHtml = `
+        <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222222; line-height: 1.6;">
+          <p>${(messageBody || "").replace(/\n/g, '<br>')}</p>
+          <br>
+          <p style="font-size: 11px; color: #777777;">
+            If you wish to stop receiving updates, reply with 'Unsubscribe'.
+          </p>
+        </div>
+      `;
+
+      // Optimized Mail Options for Maximum Compliance
       const mailOptions = {
         from: cleanSender ? `"${cleanSender}" <${cleanEmail}>` : cleanEmail,
         to: toEmail,
-        subject: subject || "",
-        text: messageBody || "",
-        html: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; line-height: 1.5;">${(messageBody || "").replace(/\n/g, '<br>')}</div>`
+        replyTo: cleanEmail,
+        subject: subject || "Notification Update",
+        text: plainTextContent, // Plain Text Fallback
+        html: formattedHtml,    // Formatted Version
+        headers: {
+          'List-Unsubscribe': `<mailto:${cleanEmail}?subject=Unsubscribe>`,
+          'Precedence': 'bulk'
+        }
       };
 
       try {
         await transporter.sendMail(mailOptions);
         ok++;
-        console.log(`[${i + 1}/${recipients.length}] ✅ Sent to → ${toEmail}`);
+        console.log(`[${i + 1}/${recipients.length}] ✅ Delivered to → ${toEmail}`);
       } catch (err) {
         fail++;
         console.error(`[${i + 1}/${recipients.length}] ❌ Failed for ${toEmail}:`, err.message);
       }
 
-      // 2 Seconds Gap between mails so Gmail rate-limit trigger na ho
+      // Variable Natural Delay between emails
       if (i < recipients.length - 1) {
-        await sleep(2000);
+        const delayTime = Math.floor(Math.random() * 3000) + 3000;
+        console.log(`[Queue] Waiting ${(delayTime/1000).toFixed(1)}s before next mail...`);
+        await getRandomDelay();
       }
     }
 
@@ -92,5 +114,5 @@ app.post('/logout', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Clean Mailer Server active on http://localhost:${PORT}`);
+  console.log(`🚀 High-Deliverability Mailer active on http://localhost:${PORT}`);
 });
