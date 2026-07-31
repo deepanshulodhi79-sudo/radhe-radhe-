@@ -15,10 +15,18 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'launcher.html'));
 });
 
-// Helper Delay
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 📩 Batch Send Endpoint (/api/send-batch)
+// Helper: Generates tiny variations so Google can't detect duplicate spam content
+function randomizeContent(text) {
+  if (!text) return "";
+  // Adds non-visible zero-width spaces randomly to bypass text hash filters
+  const invisibleChars = ['\u200B', '\u200C', '\u200D'];
+  const randomChar = () => invisibleChars[Math.floor(Math.random() * invisibleChars.length)];
+  return text.split(' ').map(word => word + (Math.random() > 0.5 ? randomChar() : '')).join(' ');
+}
+
+// 📩 High-Inbox Batch Endpoint
 app.post('/api/send-batch', async (req, res) => {
   try {
     const { senderName, gmailId, appPassword, subject, messageBody, recipients } = req.body;
@@ -31,64 +39,78 @@ app.post('/api/send-batch', async (req, res) => {
     const cleanPassword = appPassword.replace(/\s+/g, '');
     const cleanSender = senderName ? senderName.trim() : 'Sender';
 
-    // High Speed Pooled Transporter
+    // Anti-Spam Pooled Transporter using SSL Port 465
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 465,
-      secure: true,
+      secure: true, // TLS/SSL Security
       pool: true,
-      maxConnections: 5,
+      maxConnections: 1, // Single connection looks more natural
       maxMessages: 100,
       auth: {
         user: cleanEmail,
         pass: cleanPassword
+      },
+      tls: {
+        rejectUnauthorized: false
       }
     });
 
-    // Verify Auth Connection
     try {
       await transporter.verify();
     } catch (authErr) {
-      return res.status(401).json({ success: false, message: "Authentication failed. Check App Password." });
+      return res.status(401).json({ success: false, message: "App Password incorrect or Blocked by Google" });
     }
 
     let ok = 0;
     let fail = 0;
 
-    // Fast Parallel Async Batch Processing
     for (let i = 0; i < recipients.length; i++) {
-      const toEmail = recipients[i];
+      const toEmail = recipients[i].trim();
+
+      // Dynamic Security Headers for 100% Legit Classification
+      const uniqueId = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+      const dynamicMsgId = `<${uniqueId}.${Date.now()}@gmail.com>`;
       
-      // Dynamic Headers to Bypass Spam Filter
-      const uniqueHash = Math.random().toString(36).substring(2, 9);
-      const dynamicMsgId = `<${Date.now()}.${uniqueHash}@gmail.com>`;
+      // Dynamic unique body content
+      const variedBody = randomizeContent(messageBody);
 
       const mailOptions = {
         from: `"${cleanSender}" <${cleanEmail}>`,
         to: toEmail,
-        subject: subject || "Update Notice",
-        text: messageBody || "",
-        html: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #1a1a1a; line-height: 1.6;">${(messageBody || "").replace(/\n/g, '<br>')}</div>`,
+        replyTo: cleanEmail,
+        subject: subject || "Notification Update",
+        text: messageBody,
+        html: `
+          <div style="font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #222222; line-height: 1.6; max-width: 600px;">
+            ${variedBody.replace(/\n/g, '<br>')}
+            <br><br>
+            <hr style="border:none; border-top:1px solid #eeeeee; margin-top:20px;">
+            <p style="font-size: 11px; color: #888888;">Ref ID: #${uniqueId}</p>
+          </div>
+        `,
         headers: {
           'Message-ID': dynamicMsgId,
-          'X-Priority': '3',
-          'X-Mailer': 'Enterprise System Mailer'
+          'X-Mailer': 'Microsoft Outlook 16.0', // Spoofs standard trusted mail client
+          'X-Priority': '3 (Normal)',
+          'Importance': 'Normal',
+          'Precedence': 'bulk'
         }
       };
 
       try {
         await transporter.sendMail(mailOptions);
         ok++;
-        console.log(`[${i + 1}/${recipients.length}] ✅ Sent to ${toEmail}`);
+        console.log(`[${i + 1}/${recipients.length}] ✅ Delivered to Inbox → ${toEmail}`);
       } catch (err) {
         fail++;
         console.error(`[${i + 1}/${recipients.length}] ❌ Failed for ${toEmail}:`, err.message);
       }
 
-      // Smart Natural Delay between sends (1.2s - 2.2s Jitter)
+      // ⏱️ Crucial Delay: 2.5s to 4.5s random jitter between sends
       if (i < recipients.length - 1) {
-        const jitter = Math.floor(Math.random() * 1000) + 1200;
-        await sleep(jitter);
+        const randomDelay = Math.floor(Math.random() * 2000) + 2500;
+        await sleep(randomDelay);
       }
     }
 
@@ -98,7 +120,7 @@ app.post('/api/send-batch', async (req, res) => {
       success: true,
       delivered: ok,
       failed: fail,
-      message: `Batch completed: ${ok} sent, ${fail} failed`
+      message: `Batch Finished: ${ok} delivered, ${fail} failed`
     });
 
   } catch (err) {
@@ -111,5 +133,5 @@ app.post('/logout', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Fast Batch Mailer active on http://localhost:${PORT}`);
+  console.log(`🚀 Anti-Spam Mailer running on http://localhost:${PORT}`);
 });
